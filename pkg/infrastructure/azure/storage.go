@@ -243,6 +243,7 @@ func CreateStoragePrivateEndpoint(ctx context.Context, in *CreatePrivateEndpoint
 				CustomNetworkInterfaceName: to.Ptr(in.Name + "-nic"),
 				PrivateLinkServiceConnections: []*armnetwork.PrivateLinkServiceConnection{
 					{
+						Name: to.Ptr("storageConnection"),
 						Properties: &armnetwork.PrivateLinkServiceConnectionProperties{
 							PrivateLinkServiceID: to.Ptr("/subscriptions/" + in.SubscriptionID + "/resourceGroups/" + in.ResourceGroupName + "/providers/Microsoft.Network/privateLinkServices/" + in.StorageAccountID),
 							GroupIDs:             []*string{to.Ptr("blob")}, // or "file", "table", "queue" depending on the storage type
