@@ -46,6 +46,7 @@ type CreateStorageAccountInput struct {
 	CloudName          aztypes.CloudEnvironment
 	TokenCredential    azcore.TokenCredential
 	ClientOpts         *arm.ClientOptions
+	PublicNetworkAccess string
 }
 
 // CreateStorageAccountOutput contains the return values after creating a
@@ -57,10 +58,31 @@ type CreateStorageAccountOutput struct {
 	StorageAccountKeys    []armstorage.AccountKey
 }
 
+type CreatePrivateEndpointInput struct {
+	SubscriptionID     string
+
+}
+
+type CreatePrivateEndpointOutput struct {
+
+}
+
 // CreateStorageAccount creates a new storage account.
 func CreateStorageAccount(ctx context.Context, in *CreateStorageAccountInput) (*CreateStorageAccountOutput, error) {
 	minimumTLSVersion := armstorage.MinimumTLSVersionTLS10
 	storageKind := to.Ptr(armstorage.KindStorageV2)
+
+	publicNetworkAccess := to.Ptr(armstorage.PublicNetworkAccessEnabled)
+	switch in.PublicNetworkAccess {
+	case "Enabled":
+		publicNetworkAccess = to.Ptr(armstorage.PublicNetworkAccessEnabled)
+	case "Disabled":
+		publicNetworkAccess = to.Ptr(armstorage.PublicNetworkAccessDisabled)
+	case "SecuredByPerimeter":
+		publicNetworkAccess = to.Ptr(armstorage.PublicNetworkAccessSecuredByPerimeter)
+	default:
+		publicNetworkAccess = to.Ptr(armstorage.PublicNetworkAccessEnabled)
+	}
 
 	/* XXX: Do we support other clouds? */
 	switch in.CloudName {
@@ -104,7 +126,7 @@ func CreateStorageAccount(ctx context.Context, in *CreateStorageAccountInput) (*
 			AllowSharedKeyAccess:        to.Ptr(allowSharedKeyAccess),
 			IsLocalUserEnabled:          to.Ptr(true),
 			LargeFileSharesState:        to.Ptr(armstorage.LargeFileSharesStateEnabled),
-			PublicNetworkAccess:         to.Ptr(armstorage.PublicNetworkAccessEnabled),
+			PublicNetworkAccess:         publicNetworkAccess,
 			MinimumTLSVersion:           &minimumTLSVersion,
 			AllowCrossTenantReplication: to.Ptr(false), // must remain false to comply with BAFIN and PCI-DSS regulations
 		},
@@ -183,6 +205,23 @@ func CreateStorageAccount(ctx context.Context, in *CreateStorageAccountInput) (*
 	}
 
 	return out, nil
+}
+
+// CreateStoragePrivateEndpoint follows CreateStorageAccount's pattern to create a private endpoint
+func CreateStoragePrivateEndpoint(ctx context.Context, in *CreatePrivateEndpointInput) (*CreatePrivateEndpointOutput, error) {
+	opts := &arm.ClientOptions{
+		ClientOptions: policy.ClientOptions{
+			Cloud: in.ClientOpts.Cloud,
+		},
+	}
+
+	endpointClientFactory, err := armnetwork.NewClientFactory(in.SubscriptionID, in.TokenCredential, opts)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get endpoint client factory %v", err)
+	}
+
+
+	
 }
 
 // CreateBlobContainerInput contains the input parameters used for creating a

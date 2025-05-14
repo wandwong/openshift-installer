@@ -1,0 +1,84 @@
+
+additionalTrustBundlePolicy: Proxyonly
+apiVersion: v1
+baseDomain: dev.att.com
+compute:
+- architecture: amd64
+  hyperthreading: Enabled
+  name: worker
+  platform:
+    azure:
+      encryptionAtHost: true
+      osDisk:
+        diskEncryptionSet:
+          name: watson-des-key
+          resourceGroup: azsvc-westus2-nprd-watson-poc-rg
+          subscriptionId: d35ee4cf-dd95-4bf4-a9d3-866387eb56ce
+        diskSizeGB: 512
+        diskType: Premium_LRS
+      osImage:
+        offer: ""
+        plan: ""
+        publisher: ""
+        sku: ""
+        version: ""
+      type: Standard_D16s_v3
+      ultraSSDCapability: Enabled
+    replicas: 3
+controlPlane:
+  architecture: amd64
+  hyperthreading: Enabled
+  name: master
+  platform:
+    azure:
+      encryptionAtHost: true
+      osDisk:
+        diskEncryptionSet:
+          name: watson-des-key
+          resourceGroup: azsvc-westus2-nprd-watson-poc-rg
+          subscriptionId: d35ee4cf-dd95-4bf4-a9d3-866387eb56ce
+        diskSizeGB: 512
+        diskType: Premium_LRS
+        "
+      osImage: 
+        offer: ""
+        plan: ""
+        publisher: ""
+        sku: ""
+        version: ""
+      type: Standard_D8s_v3 
+      ultraSSDCapability: Enabled
+  replicas: 3
+metadata:
+  creationTimestamp: null
+  name: watson-poc
+networking:
+  clusterNetwork:
+  - cidr: 10.128.0.0/14
+    hostPrefix: 23
+  machineNetwork:
+  - cidr: 172.17.0.0/16
+  networkType: OVNKubernetes
+  serviceNetwork:
+  - 172.30.0.0/16
+platform:
+  azure:
+    userTags:
+      created_By: dk522x
+      environment: poc
+      purpose: waston-POC
+    baseDomainResourceGroupName: azsvc-westus2-nprd-watson-poc-rg
+    cloudName: AzurePublicCloud
+    computeSubnet: shared-nprd-westus2-watson-pods-2-sb
+    controlPlaneSubnet: shared-nprd-westus2-watson-pods-sb 
+    networkResourceGroupName: azsvc-westus2-nprd-shared-rg
+    outboundType: UserDefinedRouting 
+    region: westus2
+    resourceGroupName: azsvc-westus2-nprd-openshift-rg 
+    virtualNetwork: azsvc-shared-westus2-nprd-vnet
+    storagePublicNetworkAccess: SecuredByPerimeter
+proxy:
+  httpProxy: http://proxy.conexus.svc.local:3128 
+  httpsProxy: http://proxy.conexus.svc.local:3128
+  noProxy: watson-poc-kv.vault.azure.net,.dev.att.com, .privatelink.blob.core.windows.net, .privatelink.vault.azure.net, .blob.core.windows.net, .vault.azure.net 
+publish: Internal

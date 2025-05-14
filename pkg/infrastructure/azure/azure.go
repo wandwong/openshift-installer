@@ -212,8 +212,11 @@ func (p *Provider) InfraReady(ctx context.Context, in clusterapi.InfraReadyInput
 	var storageAccount *armstorage.Account
 	var storageClientFactory *armstorage.ClientFactory
 	var storageAccountKeys []armstorage.AccountKey
+	var privateEndpoint *armnetwork.PrivateEndpoint
+	var endpointClientFactory *armnetwork.ClientFactory
 
 	var createStorageAccountOutput *CreateStorageAccountOutput
+	var createPrivateEndpointOutput *CreatePrivateEndpointOutput
 	if platform.CloudName != aztypes.StackCloud {
 		// Create storage account
 		createStorageAccountOutput, err = CreateStorageAccount(ctx, &CreateStorageAccountInput{
@@ -227,6 +230,7 @@ func (p *Provider) InfraReady(ctx context.Context, in clusterapi.InfraReadyInput
 			CustomerManagedKey: platform.CustomerManagedKey,
 			TokenCredential:    tokenCredential,
 			ClientOpts:         p.clientOptions,
+			PublicNetworkAccess: platform.StoragePublicNetworkAccess, 
 		})
 		if err != nil {
 			return err
@@ -236,6 +240,21 @@ func (p *Provider) InfraReady(ctx context.Context, in clusterapi.InfraReadyInput
 		storageAccountKeys = createStorageAccountOutput.StorageAccountKeys
 
 		logrus.Debugf("StorageAccount.ID=%s", *storageAccount.ID)
+
+		if platform.StoragePublicNetworkAccess == "SecuredByPerimeter" {
+			// Create private endpoint, if necessary
+			createPrivateEndpointOutput, err = CreatePrivateEndpoint(ctx, &CreatePrivateEndpointInput{
+				SubscriptionID:     subscriptionID,
+				// TODO
+
+			})
+			if err != nil {
+				return err
+			}
+			privateEndpoint = createPrivateEndpointOutput.PrivateEndpoint
+			endpointClientFactory = createPrivateEndpointOutput.EndpointClientFactory
+			logrus.Debugf("PrivateEndpoint.ID=%s", *privateEndpoint.ID)
+		}
 	}
 
 	// Upload the image to the container
