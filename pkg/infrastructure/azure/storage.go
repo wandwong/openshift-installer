@@ -59,12 +59,20 @@ type CreateStorageAccountOutput struct {
 }
 
 type CreatePrivateEndpointInput struct {
-	SubscriptionID     string
-
+	SubscriptionID           string
+	ResourceGroupName        string
+	NetworkResourceGroupName string
+	Name                     string
+	Region                   string
+	StorageAccountID         string
+	VirtualNetwork           string
+	Subnet                   string
 }
 
 type CreatePrivateEndpointOutput struct {
-
+	PrivateEndpoint *armnetwork.PrivateEndpoint
+	EndpointsClient *armnetwork.PrivateEndpointsClient
+	EndpointClientFactory *armstorage.ClientFactory
 }
 
 // CreateStorageAccount creates a new storage account.
@@ -215,13 +223,53 @@ func CreateStoragePrivateEndpoint(ctx context.Context, in *CreatePrivateEndpoint
 		},
 	}
 
-	endpointClientFactory, err := armnetwork.NewClientFactory(in.SubscriptionID, in.TokenCredential, opts)
+	endpointsClientFactory, err := armnetwork.NewClientFactory(in.SubscriptionID, in.TokenCredential, opts)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get endpoint client factory %v", err)
 	}
 
+	logrus.Debugf("Creating private endpoint")
+	endpointsClient := endpointsClientFactory.NewPrivateEndpointsClient()
+	pollerResponse, err := endpointsClient.BeginCreateOrUpdate(
+		ctx, 
+		in.ResourceGroupName,
+		in.Name, 
+		armnetwork.PrivateEndpoint{
+			Location: to.Ptr(in.Region),
+			Properties: &armnetwork.PrivateEndpointProperties{
+				CustomNetworkInterfaceName: to.Ptr(in.Name + "-nic"),
+				PrivateLinkServiceConnections: []*armnetwork.PrivateLinkServiceConnection{
+					{
+						Properties: &armnetwork.PrivateLinkServiceConnectionProperties{
+							PrivateLinkServiceID: to.Ptr("/subscriptions/" + in.SubscriptionID + "/resourceGroups/" + in.ResourceGroupName + "/providers/Microsoft.Network/privateLinkServices/" + in.StorageAccountID),
+							GroupIDs:             []*string{to.Ptr("blob")}, // or "file", "table", "queue" depending on the storage type
+						},
+					}
+				},
+				Subnet: &armnetwork.Subnet{
+					ID: to.Ptr("/subscriptions/" + in.SubscriptionID + "/resourceGroups/" + in.NetworkResourceGroupName + "/providers/Microsoft.Network/virtualNetworks/" + in.VirtualNetwork + "/subnets/" + in.Subnet),
+				},
+			},
+		}, 
+		nil,
+	)
 
+	if err != nil {
+		return nil, fmt.Errorf("error creating private endpoint %s: %w", in.Name, err)
+	}
+
+	pollDoneResponse, err := pollerResponse.PollUntilDone(ctx, nil)
+	if err != nil {
+		return nil, fmt.Errorf("error waiting for creation of private endpoint %s: %w", in.Name, err)
+	}
+
+	out := &CreatePrivateEndpointOutput{
+		PrivateEndpoint:        to.Ptr(pollDoneResponse.PrivateEndpoint),
+		EndpointClient:         endpointsClient,
+		EndpointClientFactory:  endpointsClientFactory,
+	}
 	
+	return out, nil
 }
 
 // CreateBlobContainerInput contains the input parameters used for creating a

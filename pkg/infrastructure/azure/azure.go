@@ -244,9 +244,14 @@ func (p *Provider) InfraReady(ctx context.Context, in clusterapi.InfraReadyInput
 		if platform.StoragePublicNetworkAccess == "SecuredByPerimeter" {
 			// Create private endpoint, if necessary
 			createPrivateEndpointOutput, err = CreatePrivateEndpoint(ctx, &CreatePrivateEndpointInput{
-				SubscriptionID:     subscriptionID,
-				// TODO
-
+				SubscriptionID:           subscriptionID,
+				ResourceGroupName:        resourceGroupName,
+				NetworkResourceGroupName: platform.NetworkResourceGroupName, 
+				Name:                     platform.StoragePrivateEndpointName, 
+				Region:                   platform.Region, 
+				StorageAccountID:         storageAccount.ID, 
+				VirtualNetwork:           platform.VirtualNetworkName(in.InfraID), 
+				Subnet:                   platform.ControlPlaneSubnetName(in.InfraID), 
 			})
 			if err != nil {
 				return err
