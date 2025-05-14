@@ -182,6 +182,10 @@ func CreateStorageAccount(ctx context.Context, in *CreateStorageAccountInput) (*
 	}
 
 	logrus.Debugf("Creating storage account")
+	log := logrus.New()
+	log.WithFields(logrus.Fields{
+		"accountCreateParameters": accountCreateParameters,
+	}).Info("accountCreateParameters")
 	accountsClient := storageClientFactory.NewAccountsClient()
 	pollerResponse, err := accountsClient.BeginCreate(
 		ctx,
@@ -210,6 +214,9 @@ func CreateStorageAccount(ctx context.Context, in *CreateStorageAccountInput) (*
 		StorageAccountsClient: accountsClient,
 		StorageClientFactory:  storageClientFactory,
 	}
+	log.WithFields(logrus.Fields{
+		"storageAccount": pollDoneResponse.Account,
+	}).Info("storageAccount")
 
 	for _, key := range listKeysResponse.Keys {
 		out.StorageAccountKeys = append(out.StorageAccountKeys, *key)
