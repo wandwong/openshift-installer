@@ -4889,6 +4889,20 @@ spec:
                     description: VirtualNetwork specifies the name of an existing
                       VNet for the installer to use
                     type: string
+                  storagePublicNetworkAccess:
+                    description: |-
+                      Whether to allow public access to the storage account, or restrict it to be accessible within the 
+                      previousky specified subnet, as configured in the private endpoint.
+                    enum:
+                    - Enabled
+                    - SecuredByPerimeter
+                    - Disabled
+                    type: string
+                  storagePrivateEndpointName:
+                    description: |-
+                      Name of the private endpoint. Name of the interface will be storagePrivateEndpointName concatenated
+                      with -nic.
+                    type: string
                 required:
                 - region
                 type: object
