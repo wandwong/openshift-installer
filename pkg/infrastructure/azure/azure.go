@@ -252,6 +252,7 @@ func (p *Provider) InfraReady(ctx context.Context, in clusterapi.InfraReadyInput
 				StorageAccountID:         *storageAccount.ID, 
 				VirtualNetwork:           platform.VirtualNetworkName(in.InfraID), 
 				Subnet:                   platform.ControlPlaneSubnetName(in.InfraID), 
+				TokenCredential:          tokenCredential,
 				ClientOpts:               p.clientOptions,
 			})
 			if err != nil {
