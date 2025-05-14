@@ -16,6 +16,7 @@ import (
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/to"
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/keyvault/armkeyvault"
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/storage/armstorage"
+	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/network/armnetwork/v2"
 	"github.com/Azure/azure-sdk-for-go/sdk/storage/azblob"
 	"github.com/Azure/azure-sdk-for-go/sdk/storage/azblob/blob"
 	"github.com/Azure/azure-sdk-for-go/sdk/storage/azblob/blockblob"
@@ -44,9 +45,9 @@ type CreateStorageAccountInput struct {
 	Tags               map[string]*string
 	CustomerManagedKey *aztypes.CustomerManagedKey
 	CloudName          aztypes.CloudEnvironment
+	PublicNetworkAccess string
 	TokenCredential    azcore.TokenCredential
 	ClientOpts         *arm.ClientOptions
-	PublicNetworkAccess string
 }
 
 // CreateStorageAccountOutput contains the return values after creating a
@@ -67,12 +68,14 @@ type CreatePrivateEndpointInput struct {
 	StorageAccountID         string
 	VirtualNetwork           string
 	Subnet                   string
+	TokenCredential          azcore.TokenCredential
+	ClientOpts               *arm.ClientOptions
 }
 
 type CreatePrivateEndpointOutput struct {
-	PrivateEndpoint *armnetwork.PrivateEndpoint
-	EndpointsClient *armnetwork.PrivateEndpointsClient
-	EndpointClientFactory *armstorage.ClientFactory
+	PrivateEndpoint        *armnetwork.PrivateEndpoint
+	EndpointsClient        *armnetwork.PrivateEndpointsClient
+	EndpointsClientFactory *armnetwork.ClientFactory
 }
 
 // CreateStorageAccount creates a new storage account.
@@ -244,7 +247,7 @@ func CreateStoragePrivateEndpoint(ctx context.Context, in *CreatePrivateEndpoint
 							PrivateLinkServiceID: to.Ptr("/subscriptions/" + in.SubscriptionID + "/resourceGroups/" + in.ResourceGroupName + "/providers/Microsoft.Network/privateLinkServices/" + in.StorageAccountID),
 							GroupIDs:             []*string{to.Ptr("blob")}, // or "file", "table", "queue" depending on the storage type
 						},
-					}
+					}, 
 				},
 				Subnet: &armnetwork.Subnet{
 					ID: to.Ptr("/subscriptions/" + in.SubscriptionID + "/resourceGroups/" + in.NetworkResourceGroupName + "/providers/Microsoft.Network/virtualNetworks/" + in.VirtualNetwork + "/subnets/" + in.Subnet),
@@ -265,8 +268,8 @@ func CreateStoragePrivateEndpoint(ctx context.Context, in *CreatePrivateEndpoint
 
 	out := &CreatePrivateEndpointOutput{
 		PrivateEndpoint:        to.Ptr(pollDoneResponse.PrivateEndpoint),
-		EndpointClient:         endpointsClient,
-		EndpointClientFactory:  endpointsClientFactory,
+		EndpointsClient:        endpointsClient,
+		EndpointsClientFactory: endpointsClientFactory,
 	}
 	
 	return out, nil

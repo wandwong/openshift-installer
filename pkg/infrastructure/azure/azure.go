@@ -213,7 +213,7 @@ func (p *Provider) InfraReady(ctx context.Context, in clusterapi.InfraReadyInput
 	var storageClientFactory *armstorage.ClientFactory
 	var storageAccountKeys []armstorage.AccountKey
 	var privateEndpoint *armnetwork.PrivateEndpoint
-	var endpointClientFactory *armnetwork.ClientFactory
+	// var endpointsClientFactory *armnetwork.ClientFactory
 
 	var createStorageAccountOutput *CreateStorageAccountOutput
 	var createPrivateEndpointOutput *CreatePrivateEndpointOutput
@@ -228,9 +228,9 @@ func (p *Provider) InfraReady(ctx context.Context, in clusterapi.InfraReadyInput
 			AuthType:           session.AuthType,
 			Tags:               tags,
 			CustomerManagedKey: platform.CustomerManagedKey,
+			PublicNetworkAccess: platform.StoragePublicNetworkAccess, 
 			TokenCredential:    tokenCredential,
 			ClientOpts:         p.clientOptions,
-			PublicNetworkAccess: platform.StoragePublicNetworkAccess, 
 		})
 		if err != nil {
 			return err
@@ -243,21 +243,22 @@ func (p *Provider) InfraReady(ctx context.Context, in clusterapi.InfraReadyInput
 
 		if platform.StoragePublicNetworkAccess == "SecuredByPerimeter" {
 			// Create private endpoint, if necessary
-			createPrivateEndpointOutput, err = CreatePrivateEndpoint(ctx, &CreatePrivateEndpointInput{
+			createPrivateEndpointOutput, err = CreateStoragePrivateEndpoint(ctx, &CreatePrivateEndpointInput{
 				SubscriptionID:           subscriptionID,
 				ResourceGroupName:        resourceGroupName,
 				NetworkResourceGroupName: platform.NetworkResourceGroupName, 
 				Name:                     platform.StoragePrivateEndpointName, 
 				Region:                   platform.Region, 
-				StorageAccountID:         storageAccount.ID, 
+				StorageAccountID:         *storageAccount.ID, 
 				VirtualNetwork:           platform.VirtualNetworkName(in.InfraID), 
 				Subnet:                   platform.ControlPlaneSubnetName(in.InfraID), 
+				ClientOpts:               p.clientOptions,
 			})
 			if err != nil {
 				return err
 			}
 			privateEndpoint = createPrivateEndpointOutput.PrivateEndpoint
-			endpointClientFactory = createPrivateEndpointOutput.EndpointClientFactory
+			// endpointsClientFactory = createPrivateEndpointOutput.EndpointsClientFactory
 			logrus.Debugf("PrivateEndpoint.ID=%s", *privateEndpoint.ID)
 		}
 	}
