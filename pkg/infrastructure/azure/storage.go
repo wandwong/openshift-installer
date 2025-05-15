@@ -47,6 +47,7 @@ type CreateStorageAccountInput struct {
 	CustomerManagedKey *aztypes.CustomerManagedKey
 	CloudName          aztypes.CloudEnvironment
 	PublicNetworkAccess      string
+	NetworkDefaultAction     string
 	NetworkResourceGroupName string
 	VirtualNetwork           string
 	Subnet                   string
@@ -185,6 +186,7 @@ func CreateStorageAccount(ctx context.Context, in *CreateStorageAccountInput) (*
 		accountCreateParameters.Properties.AllowBlobPublicAccess = to.Ptr(true)
 	}
 
+	/*
 	if in.PublicNetworkAccess == "SecuredByPerimeter" {
 		accountCreateParameters.Properties.NetworkRuleSet = &armstorage.NetworkRuleSet{
 			Bypass:        to.Ptr(armstorage.BypassAzureServices),
@@ -195,6 +197,16 @@ func CreateStorageAccount(ctx context.Context, in *CreateStorageAccountInput) (*
 					VirtualNetworkResourceID: to.Ptr("/subscriptions/" + in.SubscriptionID + "/resourceGroups/" + in.NetworkResourceGroupName + "/providers/Microsoft.Network/virtualNetworks/" + in.VirtualNetwork + "/subnets/" + in.Subnet),
 				},
 			},
+		}
+	}
+	*/
+
+	if in.NetworkDefaultAction == "Deny" {
+		accountCreateParameters.Properties.NetworkRuleSet = &armstorage.NetworkRuleSet{
+			Bypass:        to.Ptr(armstorage.BypassAzureServices),
+			DefaultAction: to.Ptr(armstorage.DefaultActionDeny),
+			IPRules:             []*armstorage.IPRule{},
+			VirtualNetworkRules: []*armstorage.VirtualNetworkRule{},
 		}
 	}
 

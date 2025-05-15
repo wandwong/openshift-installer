@@ -4898,6 +4898,12 @@ spec:
                     - SecuredByPerimeter
                     - Disabled
                     type: string
+                  storageNetworkDefaultAction:
+                    description: |-
+                      Default to allow or deny access
+                    enum:
+                    - Allow
+                    - Deny
                   storagePrivateEndpointName:
                     description: |-
                       Name of the private endpoint. Name of the interface will be storagePrivateEndpointName concatenated

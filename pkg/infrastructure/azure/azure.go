@@ -229,6 +229,7 @@ func (p *Provider) InfraReady(ctx context.Context, in clusterapi.InfraReadyInput
 			Tags:               tags,
 			CustomerManagedKey: platform.CustomerManagedKey,
 			PublicNetworkAccess:      platform.StoragePublicNetworkAccess, 
+			NetworkDefaultAction:     platform.StorageNetworkDefaultAction, 
 			NetworkResourceGroupName: platform.NetworkResourceGroupName, 
 			VirtualNetwork:           platform.VirtualNetworkName(in.InfraID), 
 			Subnet:                   platform.ControlPlaneSubnetName(in.InfraID), 
@@ -244,7 +245,7 @@ func (p *Provider) InfraReady(ctx context.Context, in clusterapi.InfraReadyInput
 
 		logrus.Debugf("StorageAccount.ID=%s", *storageAccount.ID)
 
-		if platform.StoragePublicNetworkAccess == "SecuredByPerimeter" {
+		if platform.StorageNetworkDefaultAction == "Deny" {
 			// Create private endpoint, if necessary
 			createPrivateEndpointOutput, err = CreateStoragePrivateEndpoint(ctx, &CreatePrivateEndpointInput{
 				SubscriptionID:           subscriptionID,
