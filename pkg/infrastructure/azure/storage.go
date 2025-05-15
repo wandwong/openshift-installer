@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"fmt"
+	"encoding/json"
 	"strings"
 	"sync"
 	"time"
@@ -182,10 +183,12 @@ func CreateStorageAccount(ctx context.Context, in *CreateStorageAccountInput) (*
 	}
 
 	logrus.Debugf("Creating storage account")
-	log := logrus.New()
-	log.WithFields(logrus.Fields{
-		"accountCreateParameters": accountCreateParameters,
-	}).Info("accountCreateParameters")
+	// log := logrus.New()
+	// log.WithFields(logrus.Fields{
+	// 	"accountCreateParameters": accountCreateParameters,
+	// }).Info("accountCreateParameters")
+	acpdum, _ := json.Marshal(accountCreateParameters)
+	logrus.Debugf("accountCreateParameters: " + string(acpdum))
 	accountsClient := storageClientFactory.NewAccountsClient()
 	pollerResponse, err := accountsClient.BeginCreate(
 		ctx,
@@ -214,10 +217,11 @@ func CreateStorageAccount(ctx context.Context, in *CreateStorageAccountInput) (*
 		StorageAccountsClient: accountsClient,
 		StorageClientFactory:  storageClientFactory,
 	}
-	log.WithFields(logrus.Fields{
-		"storageAccount": pollDoneResponse.Account,
-	}).Info("storageAccount")
-
+	// log.WithFields(logrus.Fields{
+	// 	"storageAccount": pollDoneResponse.Account,
+	// }).Info("storageAccount")
+	sadum, _ := json.Marshal(pollDoneResponse.Account)
+	logrus.Debugf("storageAccount: " + string(sadum))
 	for _, key := range listKeysResponse.Keys {
 		out.StorageAccountKeys = append(out.StorageAccountKeys, *key)
 	}
