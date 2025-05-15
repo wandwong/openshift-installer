@@ -76,8 +76,10 @@ platform:
     region: westus2
     resourceGroupName: azsvc-westus2-nprd-openshift-rg 
     virtualNetwork: azsvc-shared-westus2-nprd-vnet
-    storagePublicNetworkAccess: SecuredByPerimeter
+    # storagePublicNetworkAccess: SecuredByPerimeter
+    storageNetworkDefaultAction: Deny
     storagePrivateEndpointName: watson-poc-ple
+    storagePrivateDnsZone: my-private-zone.core.windows.net
 proxy:
   httpProxy: http://proxy.conexus.svc.local:3128 
   httpsProxy: http://proxy.conexus.svc.local:3128

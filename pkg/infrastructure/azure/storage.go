@@ -83,6 +83,21 @@ type CreatePrivateEndpointOutput struct {
 	EndpointsClientFactory *armnetwork.ClientFactory
 }
 
+type CreatePrivateDnsZoneGroupInput struct {
+	SubscriptionID           string
+	NetworkResourceGroupName string
+	PrivateEndpointName      string
+	PrivateDnsZoneName       string
+	TokenCredential          azcore.TokenCredential
+	ClientOpts               *arm.ClientOptions
+}
+
+type CreatePrivateDnsZoneGroupOutput struct {
+	PrivateDnsZoneGroup        *armnetwork.PrivateDnsZoneGroup
+	DNSZoneGroupsClient        *armnetwork.PrivateDNSZoneGroupsClient
+	DNSZoneGroupsClientFactory *armnetwork.ClientFactory
+}
+
 // CreateStorageAccount creates a new storage account.
 func CreateStorageAccount(ctx context.Context, in *CreateStorageAccountInput) (*CreateStorageAccountOutput, error) {
 	minimumTLSVersion := armstorage.MinimumTLSVersionTLS10
@@ -260,14 +275,14 @@ func CreateStoragePrivateEndpoint(ctx context.Context, in *CreatePrivateEndpoint
 
 	endpointsClientFactory, err := armnetwork.NewClientFactory(in.SubscriptionID, in.TokenCredential, opts)
 	if err != nil {
-		return nil, fmt.Errorf("failed to get endpoint client factory %v", err)
+		return nil, fmt.Errorf("failed to get endpoints client factory %v", err)
 	}
 
 	logrus.Debugf("Creating private endpoint")
 	endpointsClient := endpointsClientFactory.NewPrivateEndpointsClient()
 	pollerResponse, err := endpointsClient.BeginCreateOrUpdate(
 		ctx, 
-		in.ResourceGroupName,
+		in.NetworkResourceGroupName,
 		in.Name, 
 		armnetwork.PrivateEndpoint{
 			Location: to.Ptr(in.Region),
@@ -304,6 +319,57 @@ func CreateStoragePrivateEndpoint(ctx context.Context, in *CreatePrivateEndpoint
 		PrivateEndpoint:        to.Ptr(pollDoneResponse.PrivateEndpoint),
 		EndpointsClient:        endpointsClient,
 		EndpointsClientFactory: endpointsClientFactory,
+	}
+	
+	return out, nil
+}
+
+func CreatePrivateDnsZoneGroup(ctx context.Context, in *CreatePrivateDnsZoneGroupInput) (*CreatePrivateDnsZoneGroupOutput, error) {
+	opts := &arm.ClientOptions{
+		ClientOptions: policy.ClientOptions{
+			Cloud: in.ClientOpts.Cloud,
+		},
+	}
+
+	dnsZoneGroupsClientFactory, err := armnetwork.NewClientFactory(in.SubscriptionID, in.TokenCredential, opts)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get dns zone groups client factory %v", err)
+	}
+
+	logrus.Debugf("Creating private dns zone group, to link between private endpoint and dns zone")
+	dnsZoneGroupsClient := dnsZoneGroupsClientFactory.NewPrivateDNSZoneGroupsClient()
+	pollerResponse, err := dnsZoneGroupsClient.BeginCreateOrUpdate(
+		ctx, 
+		in.NetworkResourceGroupName,
+		in.PrivateEndpointName, 
+		"defaultPrivateDnsZoneGroup", 
+		armnetwork.PrivateDNSZoneGroup{
+			Properties: &armnetwork.PrivateDNSZoneGroupPropertiesFormat{
+				PrivateDNSZoneConfigs: []*armnetwork.PrivateDNSZoneConfig{
+					{
+						Properties: &armnetwork.PrivateDNSZonePropertiesFormat{
+							PrivateDNSZoneID: to.Ptr("/subscriptions/" + in.SubscriptionID + "/resourceGroups/" + in.NetworkResourceGroupName + "/providers/Microsoft.Network/privateDnsZones/" + in.PrivateDnsZoneName),
+						},
+					},
+				},
+			},
+		}, 
+		nil,
+	)
+
+	if err != nil {
+		return nil, fmt.Errorf("error creating private dns zone group to link %s and %s: %w", in.PrivateEndpointName, in.PrivateDnsZoneName, err)
+	}
+
+	pollDoneResponse, err := pollerResponse.PollUntilDone(ctx, nil)
+	if err != nil {
+		return nil, fmt.Errorf("error waiting for creation of private dns zone group to link %s and %s: %w", in.PrivateEndpointName, in.PrivateDnsZoneName, err)
+	}
+
+	out := &CreatePrivateDnsZoneGroupOutput{
+		PrivateDnsZoneGroup:        to.Ptr(pollDoneResponse.PrivateDNSZoneGroup),
+		DNSZoneGroupsClient:        dnsZoneGroupsClient,
+		DNSZoneGroupsClientFactory: dnsZoneGroupsClientFactory,
 	}
 	
 	return out, nil

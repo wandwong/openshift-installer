@@ -3,6 +3,7 @@ package azure
 import (
 	"context"
 	"fmt"
+	"path"
 	"math/rand"
 	"net/http"
 	"os"
@@ -213,7 +214,7 @@ func (p *Provider) InfraReady(ctx context.Context, in clusterapi.InfraReadyInput
 	var storageClientFactory *armstorage.ClientFactory
 	var storageAccountKeys []armstorage.AccountKey
 	var privateEndpoint *armnetwork.PrivateEndpoint
-	// var endpointsClientFactory *armnetwork.ClientFactory
+	var privateDnsZoneGroup *armnetwork.PrivateDNSZoneGroup
 
 	var createStorageAccountOutput *CreateStorageAccountOutput
 	var createPrivateEndpointOutput *CreatePrivateEndpointOutput
@@ -246,7 +247,7 @@ func (p *Provider) InfraReady(ctx context.Context, in clusterapi.InfraReadyInput
 		logrus.Debugf("StorageAccount.ID=%s", *storageAccount.ID)
 
 		if platform.StorageNetworkDefaultAction == "Deny" {
-			// Create private endpoint, if necessary
+			// Create private endpoint
 			createPrivateEndpointOutput, err = CreateStoragePrivateEndpoint(ctx, &CreatePrivateEndpointInput{
 				SubscriptionID:           subscriptionID,
 				ResourceGroupName:        resourceGroupName,
@@ -263,8 +264,22 @@ func (p *Provider) InfraReady(ctx context.Context, in clusterapi.InfraReadyInput
 				return err
 			}
 			privateEndpoint = createPrivateEndpointOutput.PrivateEndpoint
-			// endpointsClientFactory = createPrivateEndpointOutput.EndpointsClientFactory
 			logrus.Debugf("PrivateEndpoint.ID=%s", *privateEndpoint.ID)
+
+			// Create private dns zone group
+			createPrivateDnsZoneGroupOutput, err = CreatePrivateDnsZoneGroup(ctx, &CreatePrivateDnsZoneGroupInput{
+				SubscriptionID:           subscriptionID,
+				NetworkResourceGroupName: platform.NetworkResourceGroupName, 
+				PrivateEndpointName:      path.Base(privateEndpoint.ID), 
+				PrivateDnsZoneName:       platform.StoragePrivateDnsZone, 
+				TokenCredential:          tokenCredential,
+				ClientOpts:               p.clientOptions,
+			})
+			if err != nil {
+				return err
+			}
+			privateDnsZoneGroup = createPrivateDnsZoneGroupOutput.PrivateDnsZoneGroup
+			logrus.Debugf("PrivateDnsZoneGroup.ID=%s", *PrivateDnsZoneGroup.ID)
 		}
 	}
 
