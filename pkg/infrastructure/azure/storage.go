@@ -46,7 +46,10 @@ type CreateStorageAccountInput struct {
 	Tags               map[string]*string
 	CustomerManagedKey *aztypes.CustomerManagedKey
 	CloudName          aztypes.CloudEnvironment
-	PublicNetworkAccess string
+	PublicNetworkAccess      string
+	NetworkResourceGroupName string
+	VirtualNetwork           string
+	Subnet                   string
 	TokenCredential    azcore.TokenCredential
 	ClientOpts         *arm.ClientOptions
 }
@@ -182,11 +185,20 @@ func CreateStorageAccount(ctx context.Context, in *CreateStorageAccountInput) (*
 		accountCreateParameters.Properties.AllowBlobPublicAccess = to.Ptr(true)
 	}
 
+	if in.PublicNetworkAccess == "SecuredByPerimeter" {
+		accountCreateParameters.Properties.NetworkRuleSet = &armstorage.NetworkRuleSet{
+			Bypass:        to.Ptr(armstorage.BypassAzureServices),
+			DefaultAction: to.Ptr(armstorage.DefaultActionAllow),
+			IPRules:       []*armstorage.IPRule{},
+			VirtualNetworkRules: []*armstorage.VirtualNetworkRule{
+				{
+					VirtualNetworkResourceID: to.Ptr("/subscriptions/" + in.SubscriptionID + "/resourceGroups/" + in.NetworkResourceGroupName + "/providers/Microsoft.Network/virtualNetworks/" + in.VirtualNetwork + "/subnets/" + in.Subnet),
+				},
+			},
+		}
+	}
+
 	logrus.Debugf("Creating storage account")
-	// log := logrus.New()
-	// log.WithFields(logrus.Fields{
-	// 	"accountCreateParameters": accountCreateParameters,
-	// }).Info("accountCreateParameters")
 	acpdum, _ := json.Marshal(accountCreateParameters)
 	logrus.Debugf("accountCreateParameters: " + string(acpdum))
 	accountsClient := storageClientFactory.NewAccountsClient()
@@ -217,9 +229,6 @@ func CreateStorageAccount(ctx context.Context, in *CreateStorageAccountInput) (*
 		StorageAccountsClient: accountsClient,
 		StorageClientFactory:  storageClientFactory,
 	}
-	// log.WithFields(logrus.Fields{
-	// 	"storageAccount": pollDoneResponse.Account,
-	// }).Info("storageAccount")
 	sadum, _ := json.Marshal(pollDoneResponse.Account)
 	logrus.Debugf("storageAccount: " + string(sadum))
 	for _, key := range listKeysResponse.Keys {

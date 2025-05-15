@@ -228,8 +228,11 @@ func (p *Provider) InfraReady(ctx context.Context, in clusterapi.InfraReadyInput
 			AuthType:           session.AuthType,
 			Tags:               tags,
 			CustomerManagedKey: platform.CustomerManagedKey,
-			PublicNetworkAccess: platform.StoragePublicNetworkAccess, 
-			TokenCredential:    tokenCredential,
+			PublicNetworkAccess:      platform.StoragePublicNetworkAccess, 
+			NetworkResourceGroupName: platform.NetworkResourceGroupName, 
+			VirtualNetwork:           platform.VirtualNetworkName(in.InfraID), 
+			Subnet:                   platform.ControlPlaneSubnetName(in.InfraID), 
+		TokenCredential:    tokenCredential,
 			ClientOpts:         p.clientOptions,
 		})
 		if err != nil {
