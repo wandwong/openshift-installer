@@ -17,6 +17,7 @@ import (
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/to"
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/compute/armcompute/v4"
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/network/armnetwork/v2"
+	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/privatedns/armprivatedns"
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/storage/armstorage"
 	"github.com/coreos/stream-metadata-go/arch"
 	"github.com/sirupsen/logrus"
@@ -214,10 +215,13 @@ func (p *Provider) InfraReady(ctx context.Context, in clusterapi.InfraReadyInput
 	var storageClientFactory *armstorage.ClientFactory
 	var storageAccountKeys []armstorage.AccountKey
 	var privateEndpoint *armnetwork.PrivateEndpoint
+	var privateDnsZone *armprivatedns.PrivateZone
 	var privateDnsZoneGroup *armnetwork.PrivateDNSZoneGroup
 
 	var createStorageAccountOutput *CreateStorageAccountOutput
 	var createPrivateEndpointOutput *CreatePrivateEndpointOutput
+	var createPrivateDnsZoneOutput *CreatePrivateDnsZoneOutput
+	var createPrivateDnsZoneGroupOutput *CreatePrivateDnsZoneGroupOutput
 	if platform.CloudName != aztypes.StackCloud {
 		// Create storage account
 		createStorageAccountOutput, err = CreateStorageAccount(ctx, &CreateStorageAccountInput{
@@ -266,12 +270,32 @@ func (p *Provider) InfraReady(ctx context.Context, in clusterapi.InfraReadyInput
 			privateEndpoint = createPrivateEndpointOutput.PrivateEndpoint
 			logrus.Debugf("PrivateEndpoint.ID=%s", *privateEndpoint.ID)
 
+			storagePrivateDnsZone := platform.StoragePrivateDnsZone
+			if storagePrivateDnsZone == "" {
+				storagePrivateDnsZone = "privatelink.blob." + installConfig.BaseDomain
+			}
+
+			// Create private dns zone
+			createPrivateDnsZoneOutput, err = CreatePrivateDnsZone(ctx, &CreatePrivateDnsZoneInput{
+				SubscriptionID:           subscriptionID,
+				NetworkResourceGroupName: platform.NetworkResourceGroupName, 
+				PrivateDnsZoneName:       storagePrivateDnsZone, 
+				Region:                   platform.Region, 
+				TokenCredential:          tokenCredential,
+				ClientOpts:               p.clientOptions,
+			})
+			if err != nil {
+				return err
+			}
+			privateDnsZone = createPrivateDnsZoneOutput.PrivateZone
+			logrus.Debugf("PrivateDnsZone.ID=%s", *privateDnsZone.ID)
+
 			// Create private dns zone group
 			createPrivateDnsZoneGroupOutput, err = CreatePrivateDnsZoneGroup(ctx, &CreatePrivateDnsZoneGroupInput{
 				SubscriptionID:           subscriptionID,
 				NetworkResourceGroupName: platform.NetworkResourceGroupName, 
-				PrivateEndpointName:      path.Base(privateEndpoint.ID), 
-				PrivateDnsZoneName:       platform.StoragePrivateDnsZone, 
+				PrivateEndpointName:      path.Base(*privateEndpoint.ID), 
+				PrivateDnsZoneName:       storagePrivateDnsZone, 
 				TokenCredential:          tokenCredential,
 				ClientOpts:               p.clientOptions,
 			})
@@ -279,7 +303,7 @@ func (p *Provider) InfraReady(ctx context.Context, in clusterapi.InfraReadyInput
 				return err
 			}
 			privateDnsZoneGroup = createPrivateDnsZoneGroupOutput.PrivateDnsZoneGroup
-			logrus.Debugf("PrivateDnsZoneGroup.ID=%s", *PrivateDnsZoneGroup.ID)
+			logrus.Debugf("PrivateDnsZoneGroup.ID=%s", *privateDnsZoneGroup.ID)
 		}
 	}
 

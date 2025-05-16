@@ -16,8 +16,9 @@ import (
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/streaming"
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/to"
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/keyvault/armkeyvault"
-	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/storage/armstorage"
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/network/armnetwork/v2"
+	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/privatedns/armprivatedns"
+	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/storage/armstorage"
 	"github.com/Azure/azure-sdk-for-go/sdk/storage/azblob"
 	"github.com/Azure/azure-sdk-for-go/sdk/storage/azblob/blob"
 	"github.com/Azure/azure-sdk-for-go/sdk/storage/azblob/blockblob"
@@ -83,6 +84,21 @@ type CreatePrivateEndpointOutput struct {
 	EndpointsClientFactory *armnetwork.ClientFactory
 }
 
+type CreatePrivateDnsZoneInput struct {
+	SubscriptionID           string
+	NetworkResourceGroupName string
+	PrivateDnsZoneName       string
+	Region                   string
+	TokenCredential          azcore.TokenCredential
+	ClientOpts               *arm.ClientOptions
+}
+
+type CreatePrivateDnsZoneOutput struct {
+	PrivateZone        *armprivatedns.PrivateZone
+	ZonesClient        *armprivatedns.PrivateZonesClient
+	ZonesClientFactory *armprivatedns.ClientFactory
+}
+
 type CreatePrivateDnsZoneGroupInput struct {
 	SubscriptionID           string
 	NetworkResourceGroupName string
@@ -93,7 +109,7 @@ type CreatePrivateDnsZoneGroupInput struct {
 }
 
 type CreatePrivateDnsZoneGroupOutput struct {
-	PrivateDnsZoneGroup        *armnetwork.PrivateDnsZoneGroup
+	PrivateDnsZoneGroup        *armnetwork.PrivateDNSZoneGroup
 	DNSZoneGroupsClient        *armnetwork.PrivateDNSZoneGroupsClient
 	DNSZoneGroupsClientFactory *armnetwork.ClientFactory
 }
@@ -319,6 +335,48 @@ func CreateStoragePrivateEndpoint(ctx context.Context, in *CreatePrivateEndpoint
 		PrivateEndpoint:        to.Ptr(pollDoneResponse.PrivateEndpoint),
 		EndpointsClient:        endpointsClient,
 		EndpointsClientFactory: endpointsClientFactory,
+	}
+	
+	return out, nil
+}
+
+func CreatePrivateDnsZone(ctx context.Context, in *CreatePrivateDnsZoneInput) (*CreatePrivateDnsZoneOutput, error) {
+	opts := &arm.ClientOptions{
+		ClientOptions: policy.ClientOptions{
+			Cloud: in.ClientOpts.Cloud,
+		},
+	}
+
+	zonesClientFactory, err := armprivatedns.NewClientFactory(in.SubscriptionID, in.TokenCredential, opts)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get dns zones client factory %v", err)
+	}
+
+	logrus.Debugf("Creating or updating private dns zone")
+	zonesClient := zonesClientFactory.NewPrivateZonesClient()
+	pollerResponse, err := zonesClient.BeginCreateOrUpdate(
+		ctx, 
+		in.NetworkResourceGroupName,
+		in.PrivateDnsZoneName, 
+		armprivatedns.PrivateZone{
+			Location: to.Ptr(in.Region),
+		},
+		nil,
+	)
+
+	if err != nil {
+		return nil, fmt.Errorf("error creating private dns zone %s: %w", in.PrivateDnsZoneName, err)
+	}
+
+	pollDoneResponse, err := pollerResponse.PollUntilDone(ctx, nil)
+	if err != nil {
+		return nil, fmt.Errorf("error waiting for creation of private dns zone %s: %w", in.PrivateDnsZoneName, err)
+	}
+
+	out := &CreatePrivateDnsZoneOutput{
+		PrivateZone:        to.Ptr(pollDoneResponse.PrivateZone),
+		ZonesClient:        zonesClient, 
+		ZonesClientFactory: zonesClientFactory, 
 	}
 	
 	return out, nil

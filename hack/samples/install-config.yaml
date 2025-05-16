@@ -79,7 +79,7 @@ platform:
     # storagePublicNetworkAccess: SecuredByPerimeter
     storageNetworkDefaultAction: Deny
     storagePrivateEndpointName: watson-poc-ple
-    storagePrivateDnsZone: my-private-zone.core.windows.net
+    # storagePrivateDnsZone: privatelink.blob.core.windows.net
 proxy:
   httpProxy: http://proxy.conexus.svc.local:3128 
   httpsProxy: http://proxy.conexus.svc.local:3128
