@@ -272,6 +272,7 @@ func (p *Provider) InfraReady(ctx context.Context, in clusterapi.InfraReadyInput
 
 			storagePrivateDnsZone := platform.StoragePrivateDnsZone
 			if storagePrivateDnsZone == "" {
+				// storagePrivateDnsZone = "privatelink.blob." + installConfig.BaseDomain
 				storagePrivateDnsZone = "privatelink.blob.core.windows.net"
 			}
 
