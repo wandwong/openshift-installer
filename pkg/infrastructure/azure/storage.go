@@ -3,6 +3,7 @@ package azure
 import (
 	"bytes"
 	"context"
+	"crypto/sha256"
 	"fmt"
 	"encoding/json"
 	"strings"
@@ -97,6 +98,21 @@ type CreatePrivateDnsZoneOutput struct {
 	PrivateZone        *armprivatedns.PrivateZone
 	ZonesClient        *armprivatedns.PrivateZonesClient
 	ZonesClientFactory *armprivatedns.ClientFactory
+}
+
+type CreateVirtualNetworkLinkInput struct {
+	SubscriptionID           string
+	NetworkResourceGroupName string
+	PrivateDnsZoneName       string
+	VirtualNetwork           string
+	TokenCredential          azcore.TokenCredential
+	ClientOpts               *arm.ClientOptions
+}
+
+type CreateVirtualNetworkLinkOutput struct {
+	VirtualNetworkLink     *armprivatedns.VirtualNetworkLink
+	VnetLinksClient        *armprivatedns.VirtualNetworkLinksClient
+	VnetLinksClientFactory *armprivatedns.ClientFactory
 }
 
 type CreatePrivateDnsZoneGroupInput struct {
@@ -382,6 +398,58 @@ func CreatePrivateDnsZone(ctx context.Context, in *CreatePrivateDnsZoneInput) (*
 	return out, nil
 }
 
+func CreateVirtualNetworkLink(ctx context.Context, in *CreateVirtualNetworkLinkInput) (*CreateVirtualNetworkLinkOutput, error) {
+	opts := &arm.ClientOptions{
+		ClientOptions: policy.ClientOptions{
+			Cloud: in.ClientOpts.Cloud,
+		},
+	}
+
+	vnetLinksClientFactory, err := armprivatedns.NewClientFactory(in.SubscriptionID, in.TokenCredential, opts)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get vnet link client factory %v", err)
+	}
+
+	logrus.Debugf("Creating or updating vnet link")
+	hasher := sha256.New()
+	hasher.Write([]byte(in.VirtualNetwork + in.PrivateDnsZoneName))
+	vnetLinkName := fmt.Sprintf("%x", hasher.Sum(nil))[:10]
+	vnetLinksClient := vnetLinksClientFactory.NewVirtualNetworkLinksClient()
+	pollerResponse, err := vnetLinksClient.BeginCreateOrUpdate(
+		ctx, 
+		in.NetworkResourceGroupName,
+		in.PrivateDnsZoneName, 
+		vnetLinkName, 
+		armprivatedns.VirtualNetworkLink {
+			Location: to.Ptr("global"),
+			Properties: &armprivatedns.VirtualNetworkLinkProperties{
+				RegistrationEnabled: to.Ptr(true),
+				VirtualNetwork: &armprivatedns.SubResource{
+					ID: to.Ptr("/subscriptions/" + in.SubscriptionID + "/resourceGroups/" + in.NetworkResourceGroupName + "/providers/Microsoft.Network/virtualNetworks/" + in.VirtualNetwork),
+				},
+			},
+		},
+		nil,
+	)
+
+	if err != nil {
+		return nil, fmt.Errorf("error creating vnet link %s <-> %s: %w", in.VirtualNetwork, in.PrivateDnsZoneName, err)
+	}
+
+	pollDoneResponse, err := pollerResponse.PollUntilDone(ctx, nil)
+	if err != nil {
+		return nil, fmt.Errorf("error waiting for creation of vnet link %s <-> %s: %w", in.VirtualNetwork, in.PrivateDnsZoneName, err)
+	}
+
+	out := &CreateVirtualNetworkLinkOutput{
+		VirtualNetworkLink:     to.Ptr(pollDoneResponse.VirtualNetworkLink),
+		VnetLinksClient:        vnetLinksClient, 
+		VnetLinksClientFactory: vnetLinksClientFactory, 
+	}
+	
+	return out, nil
+}
+
 func CreatePrivateDnsZoneGroup(ctx context.Context, in *CreatePrivateDnsZoneGroupInput) (*CreatePrivateDnsZoneGroupOutput, error) {
 	opts := &arm.ClientOptions{
 		ClientOptions: policy.ClientOptions{
@@ -417,12 +485,12 @@ func CreatePrivateDnsZoneGroup(ctx context.Context, in *CreatePrivateDnsZoneGrou
 	)
 
 	if err != nil {
-		return nil, fmt.Errorf("error creating private dns zone group to link %s and %s: %w", in.PrivateEndpointName, in.PrivateDnsZoneName, err)
+		return nil, fmt.Errorf("error creating private dns zone group %s <-> %s: %w", in.PrivateEndpointName, in.PrivateDnsZoneName, err)
 	}
 
 	pollDoneResponse, err := pollerResponse.PollUntilDone(ctx, nil)
 	if err != nil {
-		return nil, fmt.Errorf("error waiting for creation of private dns zone group to link %s and %s: %w", in.PrivateEndpointName, in.PrivateDnsZoneName, err)
+		return nil, fmt.Errorf("error waiting for creation of private dns zone group %s <-> %s: %w", in.PrivateEndpointName, in.PrivateDnsZoneName, err)
 	}
 
 	out := &CreatePrivateDnsZoneGroupOutput{

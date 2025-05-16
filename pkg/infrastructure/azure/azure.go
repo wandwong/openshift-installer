@@ -217,11 +217,13 @@ func (p *Provider) InfraReady(ctx context.Context, in clusterapi.InfraReadyInput
 	var storageAccountKeys []armstorage.AccountKey
 	var privateEndpoint *armnetwork.PrivateEndpoint
 	var privateDnsZone *armprivatedns.PrivateZone
+	var virtualNetworkLink *armprivatedns.VirtualNetworkLink
 	var privateDnsZoneGroup *armnetwork.PrivateDNSZoneGroup
 
 	var createStorageAccountOutput *CreateStorageAccountOutput
 	var createPrivateEndpointOutput *CreatePrivateEndpointOutput
 	var createPrivateDnsZoneOutput *CreatePrivateDnsZoneOutput
+	var createVirtualNetworkLinkOutput *CreateVirtualNetworkLinkOutput
 	var createPrivateDnsZoneGroupOutput *CreatePrivateDnsZoneGroupOutput
 	if platform.CloudName != aztypes.StackCloud {
 		// Create storage account
@@ -275,6 +277,7 @@ func (p *Provider) InfraReady(ctx context.Context, in clusterapi.InfraReadyInput
 			privateEndpoint = createPrivateEndpointOutput.PrivateEndpoint
 			logrus.Debugf("PrivateEndpoint.ID=%s", *privateEndpoint.ID)
 
+			// making up the private dns zone name
 			storagePrivateDnsZone := platform.StoragePrivateDnsZone
 			if storagePrivateDnsZone == "" {
 				// storagePrivateDnsZone = "privatelink.blob." + installConfig.BaseDomain
@@ -295,6 +298,21 @@ func (p *Provider) InfraReady(ctx context.Context, in clusterapi.InfraReadyInput
 			}
 			privateDnsZone = createPrivateDnsZoneOutput.PrivateZone
 			logrus.Debugf("PrivateDnsZone.ID=%s", *privateDnsZone.ID)
+
+			// Create vnet link
+			createVirtualNetworkLinkOutput, err = CreateVirtualNetworkLink(ctx, &CreateVirtualNetworkLinkInput{
+				SubscriptionID:           subscriptionID,
+				NetworkResourceGroupName: platform.NetworkResourceGroupName, 
+				PrivateDnsZoneName:       storagePrivateDnsZone, 
+				VirtualNetwork:           platform.VirtualNetworkName(in.InfraID), 
+				TokenCredential:          tokenCredential,
+				ClientOpts:               p.clientOptions,
+			})
+			if err != nil {
+				return err
+			}
+			virtualNetworkLink = createVirtualNetworkLinkOutput.VirtualNetworkLink
+			logrus.Debugf("VirtualNetworkLink.ID=%s", *virtualNetworkLink.ID)
 
 			// Create private dns zone group
 			createPrivateDnsZoneGroupOutput, err = CreatePrivateDnsZoneGroup(ctx, &CreatePrivateDnsZoneGroupInput{
