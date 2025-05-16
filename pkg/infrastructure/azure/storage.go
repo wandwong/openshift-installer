@@ -358,7 +358,9 @@ func CreatePrivateDnsZone(ctx context.Context, in *CreatePrivateDnsZoneInput) (*
 		ctx, 
 		in.NetworkResourceGroupName,
 		in.PrivateDnsZoneName, 
-		armprivatedns.PrivateZone {},
+		armprivatedns.PrivateZone {
+			Location: to.Ptr("global"),
+		},
 		nil,
 	)
 

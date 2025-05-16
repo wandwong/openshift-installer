@@ -256,7 +256,7 @@ func (p *Provider) InfraReady(ctx context.Context, in clusterapi.InfraReadyInput
 			storagePrivateEndpointName := platform.StoragePrivateEndpointName
 			hasher := sha256.New()
 			hasher.Write([]byte(time.Now().String()))
-			storagePrivateEndpointName += string(hasher.Sum(nil)[:5])
+			storagePrivateEndpointName += fmt.Sprintf("%x", hasher.Sum(nil))[:5]
 			createPrivateEndpointOutput, err = CreateStoragePrivateEndpoint(ctx, &CreatePrivateEndpointInput{
 				SubscriptionID:           subscriptionID,
 				ResourceGroupName:        resourceGroupName,
