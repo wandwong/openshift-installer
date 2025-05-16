@@ -2,6 +2,7 @@ package azure
 
 import (
 	"context"
+	"crypto/sha256"
 	"fmt"
 	"path"
 	"math/rand"
@@ -252,11 +253,15 @@ func (p *Provider) InfraReady(ctx context.Context, in clusterapi.InfraReadyInput
 
 		if platform.StorageNetworkDefaultAction == "Deny" {
 			// Create private endpoint
+			storagePrivateEndpointName := platform.StoragePrivateEndpointName
+			hasher := sha256.New()
+			hasher.Write([]byte(time.Now().String()))
+			storagePrivateEndpointName += string(hasher.Sum(nil)[:5])
 			createPrivateEndpointOutput, err = CreateStoragePrivateEndpoint(ctx, &CreatePrivateEndpointInput{
 				SubscriptionID:           subscriptionID,
 				ResourceGroupName:        resourceGroupName,
 				NetworkResourceGroupName: platform.NetworkResourceGroupName, 
-				Name:                     platform.StoragePrivateEndpointName, 
+				Name:                     storagePrivateEndpointName, 
 				Region:                   platform.Region, 
 				StorageAccountID:         *storageAccount.ID, 
 				VirtualNetwork:           platform.VirtualNetworkName(in.InfraID), 
