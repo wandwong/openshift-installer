@@ -405,6 +405,7 @@ func CreatePrivateDnsZoneGroup(ctx context.Context, in *CreatePrivateDnsZoneGrou
 			Properties: &armnetwork.PrivateDNSZoneGroupPropertiesFormat{
 				PrivateDNSZoneConfigs: []*armnetwork.PrivateDNSZoneConfig{
 					{
+						Name: to.Ptr(in.PrivateDnsZoneName), 
 						Properties: &armnetwork.PrivateDNSZonePropertiesFormat{
 							PrivateDNSZoneID: to.Ptr("/subscriptions/" + in.SubscriptionID + "/resourceGroups/" + in.NetworkResourceGroupName + "/providers/Microsoft.Network/privateDnsZones/" + in.PrivateDnsZoneName),
 						},
