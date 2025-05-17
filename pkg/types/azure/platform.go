@@ -100,6 +100,12 @@ type Platform struct {
 
 	// CustomerManagedKey has the keys needed to encrypt the storage account.
 	CustomerManagedKey *CustomerManagedKey `json:"customerManagedKey,omitempty"`
+
+	// for probably creating private endpoints for storage account
+	StoragePublicNetworkAccess  string `json:"storagePublicNetworkAccess,omitempty"`
+	StorageNetworkDefaultAction string `json:"storageNetworkDefaultAction,omitempty"`
+	StoragePrivateEndpointName  string `json:"storagePrivateEndpointName,omitempty"`
+	StoragePrivateDnsZone       string `json:"storagePrivateDnsZone,omitempty"`
 }
 
 // KeyVault defines an Azure Key Vault.

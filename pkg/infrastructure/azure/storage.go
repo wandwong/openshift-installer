@@ -3,7 +3,10 @@ package azure
 import (
 	"bytes"
 	"context"
+	"crypto/sha256"
 	"fmt"
+	"encoding/json"
+	// "strings"
 	"sync"
 	"time"
 
@@ -13,6 +16,9 @@ import (
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/policy"
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/streaming"
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/to"
+	// "github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/keyvault/armkeyvault"
+	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/network/armnetwork/v2"
+	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/privatedns/armprivatedns"
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/storage/armstorage"
 	"github.com/Azure/azure-sdk-for-go/sdk/storage/azblob"
 	"github.com/Azure/azure-sdk-for-go/sdk/storage/azblob/blob"
@@ -33,8 +39,13 @@ type CreateStorageAccountInput struct {
 	Region             string
 	Tags               map[string]*string
 	CloudName          aztypes.CloudEnvironment
+	PublicNetworkAccess      string
+	NetworkDefaultAction     string
+	NetworkResourceGroupName string
+	VirtualNetwork           string
+	Subnet                   string
 	TokenCredential    azcore.TokenCredential
-	CloudConfiguration cloud.Configuration
+	ClientOpts               *arm.ClientOptions
 }
 
 // CreateStorageAccountOutput contains the return values after creating a
@@ -46,10 +57,87 @@ type CreateStorageAccountOutput struct {
 	StorageAccountKeys    []armstorage.AccountKey
 }
 
+type CreatePrivateEndpointInput struct {
+	SubscriptionID           string
+	ResourceGroupName        string
+	NetworkResourceGroupName string
+	Name                     string
+	Region                   string
+	StorageAccountID         string
+	VirtualNetwork           string
+	Subnet                   string
+	TokenCredential          azcore.TokenCredential
+	ClientOpts               *arm.ClientOptions
+}
+
+type CreatePrivateEndpointOutput struct {
+	PrivateEndpoint        *armnetwork.PrivateEndpoint
+	EndpointsClient        *armnetwork.PrivateEndpointsClient
+	EndpointsClientFactory *armnetwork.ClientFactory
+}
+
+type CreatePrivateDnsZoneInput struct {
+	SubscriptionID           string
+	NetworkResourceGroupName string
+	PrivateDnsZoneName       string
+	Region                   string
+	TokenCredential          azcore.TokenCredential
+	ClientOpts               *arm.ClientOptions
+}
+
+type CreatePrivateDnsZoneOutput struct {
+	PrivateZone        *armprivatedns.PrivateZone
+	ZonesClient        *armprivatedns.PrivateZonesClient
+	ZonesClientFactory *armprivatedns.ClientFactory
+}
+
+type CreateVirtualNetworkLinkInput struct {
+	SubscriptionID           string
+	NetworkResourceGroupName string
+	PrivateDnsZoneName       string
+	VirtualNetwork           string
+	TokenCredential          azcore.TokenCredential
+	ClientOpts               *arm.ClientOptions
+}
+
+type CreateVirtualNetworkLinkOutput struct {
+	VirtualNetworkLink     *armprivatedns.VirtualNetworkLink
+	VnetLinksClient        *armprivatedns.VirtualNetworkLinksClient
+	VnetLinksClientFactory *armprivatedns.ClientFactory
+}
+
+type CreatePrivateDnsZoneGroupInput struct {
+	SubscriptionID           string
+	NetworkResourceGroupName string
+	PrivateEndpointName      string
+	PrivateDnsZoneName       string
+	TokenCredential          azcore.TokenCredential
+	ClientOpts               *arm.ClientOptions
+}
+
+type CreatePrivateDnsZoneGroupOutput struct {
+	PrivateDnsZoneGroup        *armnetwork.PrivateDNSZoneGroup
+	DNSZoneGroupsClient        *armnetwork.PrivateDNSZoneGroupsClient
+	DNSZoneGroupsClientFactory *armnetwork.ClientFactory
+}
+
 // CreateStorageAccount creates a new storage account.
 func CreateStorageAccount(ctx context.Context, in *CreateStorageAccountInput) (*CreateStorageAccountOutput, error) {
 	minimumTLSVersion := armstorage.MinimumTLSVersionTLS10
-	cloudConfiguration := cloud.AzurePublic
+	// cloudConfiguration := cloud.AzurePublic
+	storageKind := to.Ptr(armstorage.KindStorageV2)
+
+	publicNetworkAccess := to.Ptr(armstorage.PublicNetworkAccessEnabled)
+	switch in.PublicNetworkAccess {
+	case "Enabled":
+		publicNetworkAccess = to.Ptr(armstorage.PublicNetworkAccessEnabled)
+	case "Disabled":
+		publicNetworkAccess = to.Ptr(armstorage.PublicNetworkAccessDisabled)
+	// case "SecuredByPerimeter":
+	// 	publicNetworkAccess = to.Ptr(armstorage.PublicNetworkAccessSecuredByPerimeter)
+	default:
+		publicNetworkAccess = to.Ptr(armstorage.PublicNetworkAccessEnabled)
+	}
 
 	/* XXX: Do we support other clouds? */
 	switch in.CloudName {
@@ -59,21 +147,112 @@ func CreateStorageAccount(ctx context.Context, in *CreateStorageAccountInput) (*
 		minimumTLSVersion = armstorage.MinimumTLSVersionTLS12
 	}
 
+	opts := &arm.ClientOptions{
+		ClientOptions: policy.ClientOptions{
+			Cloud: in.ClientOpts.Cloud,
+			// Override is not supported in v1.6.0 of the sdk
+			// so we use legacy SDKs to achieve this same functionality
+			// in a separate code path for Azure Stack.
+			//APIVersion: "2019-06-01",
+		},
+	}
+	allowSharedKeyAccess := true
+
 	storageClientFactory, err := armstorage.NewClientFactory(
 		in.SubscriptionID,
 		in.TokenCredential,
-		&arm.ClientOptions{
-			ClientOptions: policy.ClientOptions{
-				Cloud: cloudConfiguration,
-				//Transport: ...,
-			},
-		},
+		opts,
 	)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get storage account factory %w", err)
 	}
 
+	sku := armstorage.SKU{
+		Name: to.Ptr(armstorage.SKUNameStandardLRS),
+	}
+	accountCreateParameters := armstorage.AccountCreateParameters{
+		Identity: nil,
+		Kind:     storageKind,
+		Location: to.Ptr(in.Region),
+		SKU:      &sku,
+		Properties: &armstorage.AccountPropertiesCreateParameters{
+			AllowBlobPublicAccess:       to.Ptr(false),
+			AllowSharedKeyAccess:        to.Ptr(allowSharedKeyAccess),
+			IsLocalUserEnabled:          to.Ptr(true),
+			LargeFileSharesState:        to.Ptr(armstorage.LargeFileSharesStateEnabled),
+			PublicNetworkAccess:         publicNetworkAccess,
+			MinimumTLSVersion:           &minimumTLSVersion,
+			AllowCrossTenantReplication: to.Ptr(false), // must remain false to comply with BAFIN and PCI-DSS regulations
+		},
+		Tags: in.Tags,
+	}
+
+	/*
+	if in.CustomerManagedKey != nil && in.CustomerManagedKey.KeyVault.Name != "" {
+		// When encryption is enabled, Ignition is is stored as a page blob
+		// (and not a block blob). To support this case, `Kind` can continue to be
+		// `StorageV2` and yhe `SKU` needs to be `Premium_LRS`.
+		//https://learn.microsoft.com/en-us/azure/storage/common/storage-account-create?tabs=azure-portal
+		sku = armstorage.SKU{
+			Name: to.Ptr(armstorage.SKUNamePremiumLRS),
+		}
+		identity := armstorage.Identity{
+			Type: to.Ptr(armstorage.IdentityTypeUserAssigned),
+			UserAssignedIdentities: map[string]*armstorage.UserAssignedIdentity{
+				fmt.Sprintf("/subscriptions/%s/resourceGroups/%s/providers/Microsoft.ManagedIdentity/userAssignedIdentities/%s",
+					in.SubscriptionID,
+					in.CustomerManagedKey.KeyVault.ResourceGroup,
+					in.CustomerManagedKey.UserAssignedIdentityKey,
+				): {},
+			},
+		}
+		logrus.Debugf("Generating Encrytption for Storage Account using Customer Managed Key")
+		encryption, err := GenerateStorageAccountEncryption(
+			ctx,
+			&CustomerManagedKeyInput{
+				SubscriptionID:     in.SubscriptionID,
+				ResourceGroupName:  in.ResourceGroupName,
+				CustomerManagedKey: in.CustomerManagedKey,
+				TokenCredential:    in.TokenCredential,
+			},
+		)
+		if err != nil {
+			return nil, fmt.Errorf("error generating encryption information for provided customer managed key: %w", err)
+		}
+		accountCreateParameters.Identity = &identity
+		accountCreateParameters.SKU = &sku
+		accountCreateParameters.Properties.Encryption = encryption
+		accountCreateParameters.Properties.AllowBlobPublicAccess = to.Ptr(true)
+	}
+	*/
+
+	/*
+	if in.PublicNetworkAccess == "SecuredByPerimeter" {
+		accountCreateParameters.Properties.NetworkRuleSet = &armstorage.NetworkRuleSet{
+			Bypass:        to.Ptr(armstorage.BypassAzureServices),
+			DefaultAction: to.Ptr(armstorage.DefaultActionAllow),
+			IPRules:       []*armstorage.IPRule{},
+			VirtualNetworkRules: []*armstorage.VirtualNetworkRule{
+				{
+					VirtualNetworkResourceID: to.Ptr("/subscriptions/" + in.SubscriptionID + "/resourceGroups/" + in.NetworkResourceGroupName + "/providers/Microsoft.Network/virtualNetworks/" + in.VirtualNetwork + "/subnets/" + in.Subnet),
+				},
+			},
+		}
+	}
+	*/
+
+	if in.NetworkDefaultAction == "Deny" {
+		accountCreateParameters.Properties.NetworkRuleSet = &armstorage.NetworkRuleSet{
+			Bypass:        to.Ptr(armstorage.BypassAzureServices),
+			DefaultAction: to.Ptr(armstorage.DefaultActionDeny),
+			IPRules:             []*armstorage.IPRule{},
+			VirtualNetworkRules: []*armstorage.VirtualNetworkRule{},
+		}
+	}
+
 	logrus.Debugf("Creating storage account")
+	acpdum, _ := json.Marshal(accountCreateParameters)
+	logrus.Debugf("accountCreateParameters: " + string(acpdum))
 	accountsClient := storageClientFactory.NewAccountsClient()
 	pollerResponse, err := accountsClient.BeginCreate(
 		ctx,
@@ -117,11 +296,217 @@ func CreateStorageAccount(ctx context.Context, in *CreateStorageAccountInput) (*
 		StorageAccountsClient: accountsClient,
 		StorageClientFactory:  storageClientFactory,
 	}
-
+	sadum, _ := json.Marshal(pollDoneResponse.Account)
+	logrus.Debugf("storageAccount: " + string(sadum))
 	for _, key := range listKeysResponse.Keys {
 		out.StorageAccountKeys = append(out.StorageAccountKeys, *key)
 	}
 
+	return out, nil
+}
+
+// CreateStoragePrivateEndpoint follows CreateStorageAccount's pattern to create a private endpoint
+func CreateStoragePrivateEndpoint(ctx context.Context, in *CreatePrivateEndpointInput) (*CreatePrivateEndpointOutput, error) {
+	opts := &arm.ClientOptions{
+		ClientOptions: policy.ClientOptions{
+			Cloud: in.ClientOpts.Cloud,
+		},
+	}
+
+	endpointsClientFactory, err := armnetwork.NewClientFactory(in.SubscriptionID, in.TokenCredential, opts)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get endpoints client factory %v", err)
+	}
+
+	logrus.Debugf("Creating private endpoint")
+	endpointsClient := endpointsClientFactory.NewPrivateEndpointsClient()
+	pollerResponse, err := endpointsClient.BeginCreateOrUpdate(
+		ctx, 
+		in.NetworkResourceGroupName,
+		in.Name, 
+		armnetwork.PrivateEndpoint{
+			Location: to.Ptr(in.Region),
+			Properties: &armnetwork.PrivateEndpointProperties{
+				CustomNetworkInterfaceName: to.Ptr(in.Name + "-nic"),
+				PrivateLinkServiceConnections: []*armnetwork.PrivateLinkServiceConnection{
+					{
+						Name: to.Ptr("storageConnection"),
+						Properties: &armnetwork.PrivateLinkServiceConnectionProperties{
+							PrivateLinkServiceID: to.Ptr(in.StorageAccountID),
+							// PrivateLinkServiceID: to.Ptr("/subscriptions/" + in.SubscriptionID + "/resourceGroups/" + in.ResourceGroupName + "/providers/Microsoft.Network/privateLinkServices/" + in.StorageAccountID),
+							GroupIDs:             []*string{to.Ptr("blob")}, // or "file", "table", "queue" depending on the storage type
+						},
+					}, 
+				},
+				Subnet: &armnetwork.Subnet{
+					ID: to.Ptr("/subscriptions/" + in.SubscriptionID + "/resourceGroups/" + in.NetworkResourceGroupName + "/providers/Microsoft.Network/virtualNetworks/" + in.VirtualNetwork + "/subnets/" + in.Subnet),
+				},
+			},
+		}, 
+		nil,
+	)
+
+	if err != nil {
+		return nil, fmt.Errorf("error creating private endpoint %s: %w", in.Name, err)
+	}
+
+	pollDoneResponse, err := pollerResponse.PollUntilDone(ctx, nil)
+	if err != nil {
+		return nil, fmt.Errorf("error waiting for creation of private endpoint %s: %w", in.Name, err)
+	}
+
+	out := &CreatePrivateEndpointOutput{
+		PrivateEndpoint:        to.Ptr(pollDoneResponse.PrivateEndpoint),
+		EndpointsClient:        endpointsClient,
+		EndpointsClientFactory: endpointsClientFactory,
+	}
+	
+	return out, nil
+}
+
+func CreatePrivateDnsZone(ctx context.Context, in *CreatePrivateDnsZoneInput) (*CreatePrivateDnsZoneOutput, error) {
+	opts := &arm.ClientOptions{
+		ClientOptions: policy.ClientOptions{
+			Cloud: in.ClientOpts.Cloud,
+		},
+	}
+
+	zonesClientFactory, err := armprivatedns.NewClientFactory(in.SubscriptionID, in.TokenCredential, opts)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get dns zones client factory %v", err)
+	}
+
+	logrus.Debugf("Creating or updating private dns zone")
+	zonesClient := zonesClientFactory.NewPrivateZonesClient()
+	pollerResponse, err := zonesClient.BeginCreateOrUpdate(
+		ctx, 
+		in.NetworkResourceGroupName,
+		in.PrivateDnsZoneName, 
+		armprivatedns.PrivateZone {
+			Location: to.Ptr("global"),
+		},
+		nil,
+	)
+
+	if err != nil {
+		return nil, fmt.Errorf("error creating private dns zone %s: %w", in.PrivateDnsZoneName, err)
+	}
+
+	pollDoneResponse, err := pollerResponse.PollUntilDone(ctx, nil)
+	if err != nil {
+		return nil, fmt.Errorf("error waiting for creation of private dns zone %s: %w", in.PrivateDnsZoneName, err)
+	}
+
+	out := &CreatePrivateDnsZoneOutput{
+		PrivateZone:        to.Ptr(pollDoneResponse.PrivateZone),
+		ZonesClient:        zonesClient, 
+		ZonesClientFactory: zonesClientFactory, 
+	}
+	
+	return out, nil
+}
+
+func CreateVirtualNetworkLink(ctx context.Context, in *CreateVirtualNetworkLinkInput) (*CreateVirtualNetworkLinkOutput, error) {
+	opts := &arm.ClientOptions{
+		ClientOptions: policy.ClientOptions{
+			Cloud: in.ClientOpts.Cloud,
+		},
+	}
+
+	vnetLinksClientFactory, err := armprivatedns.NewClientFactory(in.SubscriptionID, in.TokenCredential, opts)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get vnet link client factory %v", err)
+	}
+
+	logrus.Debugf("Creating or updating vnet link")
+	hasher := sha256.New()
+	hasher.Write([]byte(in.VirtualNetwork + in.PrivateDnsZoneName))
+	vnetLinkName := fmt.Sprintf("%x", hasher.Sum(nil))[:10]
+	vnetLinksClient := vnetLinksClientFactory.NewVirtualNetworkLinksClient()
+	pollerResponse, err := vnetLinksClient.BeginCreateOrUpdate(
+		ctx, 
+		in.NetworkResourceGroupName,
+		in.PrivateDnsZoneName, 
+		vnetLinkName, 
+		armprivatedns.VirtualNetworkLink {
+			Location: to.Ptr("global"),
+			Properties: &armprivatedns.VirtualNetworkLinkProperties{
+				RegistrationEnabled: to.Ptr(true),
+				VirtualNetwork: &armprivatedns.SubResource{
+					ID: to.Ptr("/subscriptions/" + in.SubscriptionID + "/resourceGroups/" + in.NetworkResourceGroupName + "/providers/Microsoft.Network/virtualNetworks/" + in.VirtualNetwork),
+				},
+			},
+		},
+		nil,
+	)
+
+	if err != nil {
+		return nil, fmt.Errorf("error creating vnet link %s <-> %s: %w", in.VirtualNetwork, in.PrivateDnsZoneName, err)
+	}
+
+	pollDoneResponse, err := pollerResponse.PollUntilDone(ctx, nil)
+	if err != nil {
+		return nil, fmt.Errorf("error waiting for creation of vnet link %s <-> %s: %w", in.VirtualNetwork, in.PrivateDnsZoneName, err)
+	}
+
+	out := &CreateVirtualNetworkLinkOutput{
+		VirtualNetworkLink:     to.Ptr(pollDoneResponse.VirtualNetworkLink),
+		VnetLinksClient:        vnetLinksClient, 
+		VnetLinksClientFactory: vnetLinksClientFactory, 
+	}
+	
+	return out, nil
+}
+
+func CreatePrivateDnsZoneGroup(ctx context.Context, in *CreatePrivateDnsZoneGroupInput) (*CreatePrivateDnsZoneGroupOutput, error) {
+	opts := &arm.ClientOptions{
+		ClientOptions: policy.ClientOptions{
+			Cloud: in.ClientOpts.Cloud,
+		},
+	}
+
+	dnsZoneGroupsClientFactory, err := armnetwork.NewClientFactory(in.SubscriptionID, in.TokenCredential, opts)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get dns zone groups client factory %v", err)
+	}
+
+	logrus.Debugf("Creating private dns zone group, to link between private endpoint and dns zone")
+	dnsZoneGroupsClient := dnsZoneGroupsClientFactory.NewPrivateDNSZoneGroupsClient()
+	pollerResponse, err := dnsZoneGroupsClient.BeginCreateOrUpdate(
+		ctx, 
+		in.NetworkResourceGroupName,
+		in.PrivateEndpointName, 
+		"defaultPrivateDnsZoneGroup", 
+		armnetwork.PrivateDNSZoneGroup{
+			Properties: &armnetwork.PrivateDNSZoneGroupPropertiesFormat{
+				PrivateDNSZoneConfigs: []*armnetwork.PrivateDNSZoneConfig{
+					{
+						Name: to.Ptr(in.PrivateDnsZoneName), 
+						Properties: &armnetwork.PrivateDNSZonePropertiesFormat{
+							PrivateDNSZoneID: to.Ptr("/subscriptions/" + in.SubscriptionID + "/resourceGroups/" + in.NetworkResourceGroupName + "/providers/Microsoft.Network/privateDnsZones/" + in.PrivateDnsZoneName),
+						},
+					},
+				},
+			},
+		}, 
+		nil,
+	)
+
+	if err != nil {
+		return nil, fmt.Errorf("error creating private dns zone group %s <-> %s: %w", in.PrivateEndpointName, in.PrivateDnsZoneName, err)
+	}
+
+	pollDoneResponse, err := pollerResponse.PollUntilDone(ctx, nil)
+	if err != nil {
+		return nil, fmt.Errorf("error waiting for creation of private dns zone group %s <-> %s: %w", in.PrivateEndpointName, in.PrivateDnsZoneName, err)
+	}
+
+	out := &CreatePrivateDnsZoneGroupOutput{
+		PrivateDnsZoneGroup:        to.Ptr(pollDoneResponse.PrivateDNSZoneGroup),
+		DNSZoneGroupsClient:        dnsZoneGroupsClient,
+		DNSZoneGroupsClientFactory: dnsZoneGroupsClientFactory,
+	}
+	
 	return out, nil
 }
 
