@@ -93,6 +93,50 @@ resource "azurerm_storage_account" "cluster" {
   }
 }
 
+resource "azurerm_private_dns_zone" "private_dns_zone" {
+  name                = "privatelink.blob.core.windows.net"
+  resource_group_name = var.azure_network_resource_group_name
+}
+ 
+resource "azurerm_private_dns_zone_virtual_network_link" "vnet_link" {
+  name                  = "vnet-link"
+  resource_group_name   = var.azure_network_resource_group_name
+  private_dns_zone_name = azurerm_private_dns_zone.private_dns_zone.name
+  virtual_network_id    = data.azurerm_virtual_network.cluster_vnet.id
+  # registration_enabled  = true
+}
+
+resource "azurerm_private_endpoint" "private_endpoint" {
+  name                = "storage-endpoint"
+  location            = var.azure_region
+  resource_group_name = var.azure_network_resource_group_name
+  subnet_id           = data.azurerm_subnet.master_subnet.id
+ 
+  private_service_connection {
+    name                           = "storage-endpoint-connection"
+    private_connection_resource_id = azurerm_storage_account.cluster.id
+    subresource_names              = ["blob"]
+    is_manual_connection           = false
+  }
+ 
+  private_dns_zone_group {
+    name                 = "storage-endpoint-connection"
+    private_dns_zone_ids = [azurerm_private_dns_zone.private_dns_zone.id]
+  }
+ 
+  depends_on = [
+    azurerm_storage_account.cluster
+  ]
+}
+ 
+resource "azurerm_private_dns_a_record" "storage_account" {
+  name                = "storage-account"
+  zone_name           = "privatelink.blob.core.windows.net"
+  resource_group_name = var.azure_network_resource_group_name
+  ttl                 = 300
+  records             = [azurerm_private_endpoint.private_endpoint.private_service_connection.0.private_ip_address]
+}
+
 resource "azurerm_user_assigned_identity" "main" {
   resource_group_name = data.azurerm_resource_group.main.name
   location            = data.azurerm_resource_group.main.location
