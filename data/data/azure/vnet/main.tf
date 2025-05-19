@@ -128,9 +128,9 @@ resource "azurerm_private_endpoint" "private_endpoint" {
     private_dns_zone_ids = [azurerm_private_dns_zone.private_dns_zone.id]
   }
  
-  depends_on = [
-    azurerm_storage_account.cluster
-  ]
+  # depends_on = [
+  #   azurerm_storage_account.cluster
+  # ]
 }
  
 # resource "azurerm_private_dns_a_record" "cluster" {
