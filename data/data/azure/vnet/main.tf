@@ -133,13 +133,13 @@ resource "azurerm_private_endpoint" "private_endpoint" {
   ]
 }
  
-resource "azurerm_private_dns_a_record" "cluster" {
-  name                = "cluster"
-  zone_name           = "privatelink.blob.core.windows.net"
-  resource_group_name = var.azure_network_resource_group_name
-  ttl                 = 300
-  records             = [azurerm_private_endpoint.private_endpoint.private_service_connection.0.private_ip_address]
-}
+# resource "azurerm_private_dns_a_record" "cluster" {
+#   name                = "cluster"
+#   zone_name           = "privatelink.blob.core.windows.net"
+#   resource_group_name = var.azure_network_resource_group_name
+#   ttl                 = 300
+#   records             = [azurerm_private_endpoint.private_endpoint.private_service_connection.0.private_ip_address]
+# }
 
 resource "azurerm_user_assigned_identity" "main" {
   resource_group_name = data.azurerm_resource_group.main.name
