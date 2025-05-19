@@ -91,6 +91,10 @@ resource "azurerm_storage_account" "cluster" {
       identity_ids = [data.azurerm_user_assigned_identity.keyvault_identity[0].id]
     }
   }
+
+  network_rules {
+    default_action = "Deny"
+  }
 }
 
 resource "azurerm_private_dns_zone" "private_dns_zone" {
