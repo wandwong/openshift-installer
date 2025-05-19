@@ -133,8 +133,8 @@ resource "azurerm_private_endpoint" "private_endpoint" {
   ]
 }
  
-resource "azurerm_private_dns_a_record" "storage_account" {
-  name                = "storage-account"
+resource "azurerm_private_dns_a_record" "cluster" {
+  name                = "cluster"
   zone_name           = "privatelink.blob.core.windows.net"
   resource_group_name = var.azure_network_resource_group_name
   ttl                 = 300
