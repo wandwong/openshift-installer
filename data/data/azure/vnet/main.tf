@@ -163,12 +163,20 @@ resource "azurerm_role_assignment" "network" {
   principal_id         = azurerm_user_assigned_identity.main.principal_id
 }
 
+resource "time_sleep" "wait_a_min" {
+  create_duration = "30s" 
+  depends_on = [
+    azurerm_private_endpoint.private_endpoint
+  ]
+}
+
 # copy over the vhd to cluster resource group and create an image using that
 resource "azurerm_storage_container" "vhd" {
   name                 = "vhd"
   storage_account_name = azurerm_storage_account.cluster.name
   depends_on = [
-    azurerm_private_endpoint.private_endpoint
+    azurerm_private_endpoint.private_endpoint,
+    time_sleep.wait_a_min
   ]
 }
 
@@ -179,6 +187,10 @@ resource "azurerm_storage_blob" "rhcos_image" {
   type                   = "Page"
   source_uri             = var.azure_image_url
   metadata               = tomap({ source_uri = var.azure_image_url })
+  depends_on = [
+    azurerm_private_endpoint.private_endpoint,
+    time_sleep.wait_a_min
+  ]
 }
 
 # Creates Shared Image Gallery
