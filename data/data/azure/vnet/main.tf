@@ -167,6 +167,9 @@ resource "azurerm_role_assignment" "network" {
 resource "azurerm_storage_container" "vhd" {
   name                 = "vhd"
   storage_account_name = azurerm_storage_account.cluster.name
+  depends_on = [
+    azurerm_private_endpoint.private_endpoint
+  ]
 }
 
 resource "azurerm_storage_blob" "rhcos_image" {
