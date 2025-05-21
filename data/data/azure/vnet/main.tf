@@ -99,6 +99,24 @@ resource "azurerm_storage_account" "cluster" {
   }
 }
 
+resource "azurerm_storage_account" "dummy" {
+  name                             = "dummy${var.random_storage_account_suffix}"
+  resource_group_name              = data.azurerm_resource_group.main.name
+  location                         = var.azure_region
+  account_tier                     = var.azure_keyvault_name != "" ? "Premium" : "Standard"
+  account_replication_type         = "LRS"
+  min_tls_version                  = contains(local.environments_with_min_tls_version, var.azure_environment) ? "TLS1_2" : null
+  allow_nested_items_to_be_public  = var.azure_keyvault_name != "" ? true : false
+  tags                             = var.azure_extra_tags
+  cross_tenant_replication_enabled = false
+
+  network_rules {
+    default_action = "Deny"
+    virtual_network_subnet_ids = [local.master_subnet_id]
+    bypass = ["AzureServices"]
+  }
+}
+
 resource "azurerm_private_dns_zone" "private_dns_zone" {
   name                = "privatelink.blob.core.windows.net"
   resource_group_name = var.azure_network_resource_group_name
@@ -130,9 +148,10 @@ resource "azurerm_private_endpoint" "private_endpoint" {
     private_dns_zone_ids = [azurerm_private_dns_zone.private_dns_zone.id]
   }
  
-  # depends_on = [
-  #   azurerm_storage_account.cluster
-  # ]
+  depends_on = [
+    azurerm_storage_account.cluster, 
+    azurerm_storage_account.dummy
+  ]
 }
  
 # resource "azurerm_private_dns_a_record" "cluster" {
