@@ -24,6 +24,9 @@ provider "azurerm" {
   environment                 = var.azure_environment
 }
 
+provider "time" {
+}
+
 resource "azurerm_resource_group" "main" {
   count = var.azure_resource_group_name == "" ? 1 : 0
 
