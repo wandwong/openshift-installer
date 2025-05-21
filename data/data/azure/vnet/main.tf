@@ -24,9 +24,6 @@ provider "azurerm" {
   environment                 = var.azure_environment
 }
 
-provider "time" {
-}
-
 resource "azurerm_resource_group" "main" {
   count = var.azure_resource_group_name == "" ? 1 : 0
 
@@ -166,21 +163,16 @@ resource "azurerm_role_assignment" "network" {
   principal_id         = azurerm_user_assigned_identity.main.principal_id
 }
 
-resource "time_sleep" "wait_a_min" {
+resource "time_sleep" "wait_30_seconds" {
+  depends_on      = [azurerm_private_endpoint.private_endpoint]
   create_duration = "30s" 
-  depends_on = [
-    azurerm_private_endpoint.private_endpoint
-  ]
 }
 
 # copy over the vhd to cluster resource group and create an image using that
 resource "azurerm_storage_container" "vhd" {
   name                 = "vhd"
   storage_account_name = azurerm_storage_account.cluster.name
-  depends_on = [
-    azurerm_private_endpoint.private_endpoint,
-    time_sleep.wait_a_min
-  ]
+  depends_on           = [time_sleep.wait_30_seconds]
 }
 
 resource "azurerm_storage_blob" "rhcos_image" {
@@ -190,10 +182,7 @@ resource "azurerm_storage_blob" "rhcos_image" {
   type                   = "Page"
   source_uri             = var.azure_image_url
   metadata               = tomap({ source_uri = var.azure_image_url })
-  depends_on = [
-    azurerm_private_endpoint.private_endpoint,
-    time_sleep.wait_a_min
-  ]
+  depends_on             = [time_sleep.wait_30_seconds]
 }
 
 # Creates Shared Image Gallery
