@@ -11,7 +11,7 @@ version() { IFS="."; printf "%03d%03d%03d\\n" $@; unset IFS;}
 
 # Copy the terraform binary and providers to the mirror to be embedded in the installer binary.
 copy_terraform_to_mirror() {
-  TARGET_OS_ARCH=$(go env GOOS)_$(go env GOARCH)
+  TARGET_OS_ARCH=$(uname -s | tr '[:upper:]' '[:lower:]')_$(uname -m)
 
   # Clean the mirror, but preserve the README file.
   rm -rf "${PWD}"/pkg/terraform/providers/mirror/*/
@@ -41,7 +41,7 @@ check_module_changes() {
 
 # Build terraform and providers only if needed
 build_terraform_and_providers() {
-	TARGET_OS_ARCH=$(go env GOOS)_$(go env GOARCH)
+	TARGET_OS_ARCH=$(uname -s | tr '[:upper:]' '[:lower:]')_$(uname -m)
 	bindir="${PWD}/terraform/bin/${TARGET_OS_ARCH}"
 	find "${PWD}/terraform/providers/" -maxdepth 1 -mindepth 1 -type d | while read -r dir; do
 		provider="$(basename "${dir}")"

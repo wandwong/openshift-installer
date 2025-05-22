@@ -11,6 +11,20 @@ locals {
 
 }
 
+terraform {
+  required_providers {
+    azapi = {
+      source = "openshift/local/azapi"
+    }
+    azurerm = {
+      source = "openshift/local/azurerm"
+    }
+    time = {
+      source = "openshift/local/time"
+    }
+  }
+}
+
 provider "azurerm" {
   features {}
   subscription_id             = var.azure_subscription_id
@@ -132,14 +146,16 @@ resource "azurerm_private_endpoint" "private_endpoint" {
  
   depends_on = [azurerm_storage_account.cluster]
 }
- 
-# resource "azurerm_private_dns_a_record" "cluster" {
-#   name                = "cluster"
-#   zone_name           = "privatelink.blob.core.windows.net"
-#   resource_group_name = var.azure_network_resource_group_name
-#   ttl                 = 300
-#   records             = [azurerm_private_endpoint.private_endpoint.private_service_connection.0.private_ip_address]
-# }
+
+/* 
+resource "azurerm_private_dns_a_record" "cluster" {
+  name                = "cluster"
+  zone_name           = "privatelink.blob.core.windows.net"
+  resource_group_name = var.azure_network_resource_group_name
+  ttl                 = 300
+  records             = [azurerm_private_endpoint.private_endpoint.private_service_connection.0.private_ip_address]
+}
+*/
 
 resource "azurerm_user_assigned_identity" "main" {
   resource_group_name = data.azurerm_resource_group.main.name
@@ -162,26 +178,40 @@ resource "azurerm_role_assignment" "network" {
   principal_id         = azurerm_user_assigned_identity.main.principal_id
 }
 
-# resource "time_sleep" "wait_60_seconds" {
-#   depends_on      = [azurerm_private_endpoint.private_endpoint]
-#   create_duration = "60s" 
-# }
+resource "time_sleep" "wait_60_seconds" {
+  depends_on      = [azurerm_private_endpoint.private_endpoint]
+  create_duration = "60s" 
+}
 
 # copy over the vhd to cluster resource group and create an image using that
+/*
 resource "azurerm_storage_container" "vhd" {
   name                 = "vhd"
   storage_account_name = azurerm_storage_account.cluster.name
-  depends_on           = [azurerm_private_endpoint.private_endpoint]
+  depends_on           = [time_sleep.wait_60_seconds]
+}
+*/
+
+resource "azapi_resource" "vhd" {
+   type      = "Microsoft.Storage/storageAccounts/blobServices/containers@2024-01-01"
+   name      = "vhd"
+   parent_id = "${azurerm_storage_account.cluster.id}/blobServices/default"
+   body = {
+      properties = {
+      }
+   }
+   depends_on = [time_sleep.wait_60_seconds]
 }
 
 resource "azurerm_storage_blob" "rhcos_image" {
   name                   = "rhcos${var.random_storage_account_suffix}.vhd"
   storage_account_name   = azurerm_storage_account.cluster.name
-  storage_container_name = azurerm_storage_container.vhd.name
+  # storage_container_name = azurerm_storage_container.vhd.name
+  storage_container_name = azapi_resource.vhd.name
   type                   = "Page"
   source_uri             = var.azure_image_url
   metadata               = tomap({ source_uri = var.azure_image_url })
-  depends_on             = [azurerm_private_endpoint.private_endpoint]
+  depends_on             = [time_sleep.wait_60_seconds]
 }
 
 # Creates Shared Image Gallery

@@ -1,4 +1,4 @@
-TARGET_OS_ARCH:=$(shell go env GOOS)_$(shell go env GOARCH)
+TARGET_OS_ARCH=$(shell uname -s | tr '[:upper:]' '[:lower:]')_$(shell uname -m)
 
 TFSUBDIRS:=	$(foreach DIR,$(shell find providers -maxdepth 1 -mindepth 1 -type d),$(subst providers/,,$(DIR)))
 
