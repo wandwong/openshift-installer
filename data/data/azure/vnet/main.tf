@@ -94,7 +94,7 @@ resource "azurerm_storage_account" "cluster" {
 
   network_rules {
     default_action = "Deny"
-    virtual_network_subnet_ids = [local.master_subnet_id, local.worker_subnet_id]
+    # virtual_network_subnet_ids = [local.master_subnet_id, local.worker_subnet_id]
     bypass = ["AzureServices"]
   }
 }
