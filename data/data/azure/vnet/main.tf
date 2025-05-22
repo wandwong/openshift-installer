@@ -11,20 +11,6 @@ locals {
 
 }
 
-terraform {
-  required_providers {
-    azapi = {
-      source = "openshift/local/azapi"
-    }
-    azurerm = {
-      source = "openshift/local/azurerm"
-    }
-    time = {
-      source = "openshift/local/time"
-    }
-  }
-}
-
 provider "azurerm" {
   features {}
   subscription_id             = var.azure_subscription_id

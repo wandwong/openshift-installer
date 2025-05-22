@@ -12,7 +12,7 @@ var PlatformStages = []terraform.Stage{
 	stages.NewStage(
 		typesazure.Name,
 		"vnet",
-		[]providers.Provider{providers.AzureRM},
+		[]providers.Provider{providers.AzureRM, providers.Time, providers.AzureAPI},
 	),
 	stages.NewStage(
 		typesazure.Name,
