@@ -1,3 +1,6 @@
+// Copyright (c) HashiCorp, Inc.
+// SPDX-License-Identifier: MPL-2.0
+
 package migration
 
 import (
@@ -98,7 +101,7 @@ func (d DatabaseV0ToV1) Schema() map[string]*pluginsdk.Schema {
 			Computed: true,
 		},
 
-		//lintignore:XS003
+		// lintignore:XS003
 		"long_term_retention_policy": {
 			Type:     pluginsdk.TypeList,
 			Optional: true,

@@ -1,3 +1,6 @@
+// Copyright (c) HashiCorp, Inc.
+// SPDX-License-Identifier: MPL-2.0
+
 package migration
 
 import (
@@ -25,7 +28,7 @@ func (s IoTHubEndPointStorageContainerV0ToV1) Schema() map[string]*pluginsdk.Sch
 			ForceNew: true,
 		},
 
-		//lintignore: S013
+		// lintignore: S013
 		"iothub_id": {
 			Type:     pluginsdk.TypeString,
 			Required: true,

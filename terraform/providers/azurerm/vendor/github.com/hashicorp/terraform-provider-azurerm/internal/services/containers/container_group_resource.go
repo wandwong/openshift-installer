@@ -1,7 +1,11 @@
+// Copyright (c) HashiCorp, Inc.
+// SPDX-License-Identifier: MPL-2.0
+
 package containers
 
 import (
 	"bytes"
+	"context"
 	"fmt"
 	"log"
 	"strings"
@@ -15,15 +19,13 @@ import (
 	"github.com/hashicorp/go-azure-helpers/resourcemanager/location"
 	"github.com/hashicorp/go-azure-helpers/resourcemanager/tags"
 	"github.com/hashicorp/go-azure-helpers/resourcemanager/zones"
-	"github.com/hashicorp/go-azure-sdk/resource-manager/containerinstance/2021-10-01/containerinstance"
+	"github.com/hashicorp/go-azure-sdk/resource-manager/containerinstance/2023-05-01/containerinstance"
 	"github.com/hashicorp/terraform-provider-azurerm/helpers/tf"
 	"github.com/hashicorp/terraform-provider-azurerm/helpers/validate"
 	"github.com/hashicorp/terraform-provider-azurerm/internal/clients"
 	"github.com/hashicorp/terraform-provider-azurerm/internal/locks"
 	keyVaultParse "github.com/hashicorp/terraform-provider-azurerm/internal/services/keyvault/parse"
 	keyVaultValidate "github.com/hashicorp/terraform-provider-azurerm/internal/services/keyvault/validate"
-	networkParse "github.com/hashicorp/terraform-provider-azurerm/internal/services/network/parse"
-	networkValidate "github.com/hashicorp/terraform-provider-azurerm/internal/services/network/validate"
 	"github.com/hashicorp/terraform-provider-azurerm/internal/tf/pluginsdk"
 	"github.com/hashicorp/terraform-provider-azurerm/internal/tf/validation"
 	"github.com/hashicorp/terraform-provider-azurerm/internal/timeouts"
@@ -31,7 +33,7 @@ import (
 )
 
 func resourceContainerGroup() *pluginsdk.Resource {
-	return &pluginsdk.Resource{
+	resource := &pluginsdk.Resource{
 		Create: resourceContainerGroupCreate,
 		Read:   resourceContainerGroupRead,
 		Delete: resourceContainerGroupDelete,
@@ -42,7 +44,7 @@ func resourceContainerGroup() *pluginsdk.Resource {
 		}),
 
 		Timeouts: &pluginsdk.ResourceTimeout{
-			Create: pluginsdk.DefaultTimeout(30 * time.Minute),
+			Create: pluginsdk.DefaultTimeout(60 * time.Minute),
 			Read:   pluginsdk.DefaultTimeout(5 * time.Minute),
 			Update: pluginsdk.DefaultTimeout(30 * time.Minute),
 			Delete: pluginsdk.DefaultTimeout(30 * time.Minute),
@@ -130,6 +132,7 @@ func resourceContainerGroup() *pluginsdk.Resource {
 				Deprecated: "the 'network_profile_id' has been removed from the latest versions of the container instance API and has been deprecated. It no longer functions and will be removed from the 4.0 AzureRM provider. Please use the 'subnet_ids' field instead",
 			},
 
+			// lintignore:S018
 			"subnet_ids": {
 				Type:     pluginsdk.TypeSet,
 				Optional: true,
@@ -137,7 +140,7 @@ func resourceContainerGroup() *pluginsdk.Resource {
 				MaxItems: 1,
 				Elem: &pluginsdk.Schema{
 					Type:         pluginsdk.TypeString,
-					ValidateFunc: networkValidate.SubnetID,
+					ValidateFunc: commonids.ValidateSubnetID,
 				},
 				Set:           pluginsdk.HashString,
 				ConflictsWith: []string{"dns_name_label"},
@@ -146,6 +149,14 @@ func resourceContainerGroup() *pluginsdk.Resource {
 			"zones": commonschema.ZonesMultipleOptionalForceNew(),
 
 			"tags": commonschema.Tags(),
+
+			"sku": {
+				Type:         pluginsdk.TypeString,
+				Optional:     true,
+				ForceNew:     true,
+				Default:      string(containerinstance.ContainerGroupSkuStandard),
+				ValidateFunc: validation.StringInSlice(containerinstance.PossibleValuesForContainerGroupSku(), false),
+			},
 
 			"restart_policy": {
 				Type:     pluginsdk.TypeString,
@@ -167,6 +178,7 @@ func resourceContainerGroup() *pluginsdk.Resource {
 
 			"dns_name_label_reuse_policy": {
 				Type:     pluginsdk.TypeString,
+				ForceNew: true,
 				Optional: true,
 				Default:  string(containerinstance.DnsNameLabelReusePolicyUnsecure),
 				ValidateFunc: validation.StringInSlice([]string{
@@ -180,10 +192,10 @@ func resourceContainerGroup() *pluginsdk.Resource {
 
 			"exposed_port": {
 				Type:       pluginsdk.TypeSet,
-				Optional:   true, // change to 'Required' in 3.0 of the provider
+				Optional:   true,
+				Computed:   true,
 				ForceNew:   true,
-				Computed:   true,                           // remove in 3.0 of the provider
-				ConfigMode: pluginsdk.SchemaConfigModeAttr, // remove in 3.0 of the provider
+				ConfigMode: pluginsdk.SchemaConfigModeAttr,
 				Set:        resourceContainerGroupPortsHash,
 				Elem: &pluginsdk.Resource{
 					Schema: map[string]*pluginsdk.Schema{
@@ -259,6 +271,8 @@ func resourceContainerGroup() *pluginsdk.Resource {
 						},
 
 						"volume": containerVolumeSchema(),
+
+						"security": containerSecurityContextSchema(),
 					},
 				},
 			},
@@ -294,39 +308,6 @@ func resourceContainerGroup() *pluginsdk.Resource {
 							ForceNew: true,
 						},
 
-						//lintignore:XS003
-						"gpu": {
-							Type:     pluginsdk.TypeList,
-							Optional: true,
-							MaxItems: 1,
-							ForceNew: true,
-							Elem: &pluginsdk.Resource{
-								Schema: map[string]*pluginsdk.Schema{
-									"count": {
-										Type:     pluginsdk.TypeInt,
-										Optional: true,
-										ForceNew: true,
-										ValidateFunc: validation.IntInSlice([]int{
-											1,
-											2,
-											4,
-										}),
-									},
-
-									"sku": {
-										Type:     pluginsdk.TypeString,
-										Optional: true,
-										ForceNew: true,
-										ValidateFunc: validation.StringInSlice([]string{
-											"K80",
-											"P100",
-											"V100",
-										}, false),
-									},
-								},
-							},
-						},
-
 						"cpu_limit": {
 							Type:         pluginsdk.TypeFloat,
 							Optional:     true,
@@ -337,32 +318,6 @@ func resourceContainerGroup() *pluginsdk.Resource {
 							Type:         pluginsdk.TypeFloat,
 							Optional:     true,
 							ValidateFunc: validation.FloatAtLeast(0.0),
-						},
-
-						//lintignore:XS003
-						"gpu_limit": {
-							Type:     pluginsdk.TypeList,
-							Optional: true,
-							MaxItems: 1,
-							Elem: &pluginsdk.Resource{
-								Schema: map[string]*pluginsdk.Schema{
-									"count": {
-										Type:         pluginsdk.TypeInt,
-										Optional:     true,
-										ValidateFunc: validation.IntAtLeast(0),
-									},
-
-									"sku": {
-										Type:     pluginsdk.TypeString,
-										Optional: true,
-										ValidateFunc: validation.StringInSlice([]string{
-											"K80",
-											"P100",
-											"V100",
-										}, false),
-									},
-								},
-							},
 						},
 
 						"ports": {
@@ -424,6 +379,8 @@ func resourceContainerGroup() *pluginsdk.Resource {
 						},
 
 						"volume": containerVolumeSchema(),
+
+						"security": containerSecurityContextSchema(),
 
 						"liveness_probe": SchemaContainerGroupProbe(),
 
@@ -539,8 +496,31 @@ func resourceContainerGroup() *pluginsdk.Resource {
 				ForceNew:     true,
 				ValidateFunc: keyVaultValidate.NestedItemId,
 			},
+
+			"key_vault_user_assigned_identity_id": {
+				Type:         pluginsdk.TypeString,
+				Optional:     true,
+				ValidateFunc: commonids.ValidateUserAssignedIdentityID,
+			},
+
+			"priority": {
+				Type:         pluginsdk.TypeString,
+				Optional:     true,
+				ForceNew:     true,
+				ValidateFunc: validation.StringInSlice(containerinstance.PossibleValuesForContainerGroupPriority(), false),
+			},
+		},
+		CustomizeDiff: func(ctx context.Context, d *pluginsdk.ResourceDiff, i interface{}) error {
+			if p := d.Get("priority").(string); p == string(containerinstance.ContainerGroupPrioritySpot) {
+				if d.Get("ip_address_type").(string) != "None" {
+					return fmt.Errorf("`ip_address_type` has to be `None` when `priority` is set to `Spot`")
+				}
+			}
+			return nil
 		},
 	}
+
+	return resource
 }
 
 func containerVolumeSchema() *pluginsdk.Schema {
@@ -642,6 +622,23 @@ func containerVolumeSchema() *pluginsdk.Schema {
 	}
 }
 
+func containerSecurityContextSchema() *pluginsdk.Schema {
+	return &pluginsdk.Schema{
+		Type:     pluginsdk.TypeList,
+		Optional: true,
+		ForceNew: true,
+		Elem: &pluginsdk.Resource{
+			Schema: map[string]*pluginsdk.Schema{
+				"privilege_enabled": {
+					Type:     pluginsdk.TypeBool,
+					ForceNew: true,
+					Required: true,
+				},
+			},
+		},
+	}
+}
+
 func resourceContainerGroupCreate(d *pluginsdk.ResourceData, meta interface{}) error {
 	client := meta.(*clients.Client).Containers.ContainerInstanceClient
 	subscriptionId := meta.(*clients.Client).Account.SubscriptionId
@@ -649,17 +646,16 @@ func resourceContainerGroupCreate(d *pluginsdk.ResourceData, meta interface{}) e
 	defer cancel()
 
 	id := containerinstance.NewContainerGroupID(subscriptionId, d.Get("resource_group_name").(string), d.Get("name").(string))
-	if d.IsNewResource() {
-		existing, err := client.ContainerGroupsGet(ctx, id)
-		if err != nil {
-			if !response.WasNotFound(existing.HttpResponse) {
-				return fmt.Errorf("checking for presence of existing %s: %+v", id, err)
-			}
-		}
 
+	existing, err := client.ContainerGroupsGet(ctx, id)
+	if err != nil {
 		if !response.WasNotFound(existing.HttpResponse) {
-			return tf.ImportAsExistsError("azurerm_container_group", id.ID())
+			return fmt.Errorf("checking for presence of existing %s: %+v", id, err)
 		}
+	}
+
+	if !response.WasNotFound(existing.HttpResponse) {
+		return tf.ImportAsExistsError("azurerm_container_group", id.ID())
 	}
 
 	location := location.Normalize(d.Get("location").(string))
@@ -694,10 +690,11 @@ func resourceContainerGroupCreate(d *pluginsdk.ResourceData, meta interface{}) e
 	}
 
 	containerGroup := containerinstance.ContainerGroup{
-		Name:     pointer.FromString(id.ContainerGroupName),
+		Name:     pointer.To(id.ContainerGroupName),
 		Location: &location,
 		Tags:     tags.Expand(d.Get("tags").(map[string]interface{})),
 		Properties: containerinstance.ContainerGroupPropertiesProperties{
+			Sku:                      pointer.To(containerinstance.ContainerGroupSku(d.Get("sku").(string))),
 			InitContainers:           initContainers,
 			Containers:               containers,
 			Diagnostics:              diagnostics,
@@ -711,15 +708,11 @@ func resourceContainerGroupCreate(d *pluginsdk.ResourceData, meta interface{}) e
 		Zones: &zones,
 	}
 
-	// Container Groups with OS Type Windows do not support managed identities but the API also does not accept Identity Type: None
-	// https://github.com/Azure/azure-rest-api-specs/issues/18122
-	if OSType != string(containerinstance.OperatingSystemTypesWindows) {
-		expandedIdentity, err := identity.ExpandSystemAndUserAssignedMap(d.Get("identity").([]interface{}))
-		if err != nil {
-			return fmt.Errorf("expanding `identity`: %+v", err)
-		}
-		containerGroup.Identity = expandedIdentity
+	expandedIdentity, err := identity.ExpandSystemAndUserAssignedMap(d.Get("identity").([]interface{}))
+	if err != nil {
+		return fmt.Errorf("expanding `identity`: %+v", err)
 	}
+	containerGroup.Identity = expandedIdentity
 
 	if IPAddressType != "None" {
 		containerGroup.Properties.IPAddress = &containerinstance.IPAddress{
@@ -741,16 +734,24 @@ func resourceContainerGroupCreate(d *pluginsdk.ResourceData, meta interface{}) e
 			return fmt.Errorf("parsing Key Vault Key ID: %+v", err)
 		}
 		containerGroup.Properties.EncryptionProperties = &containerinstance.EncryptionProperties{
-			VaultBaseUrl: keyId.KeyVaultBaseUrl,
+			VaultBaseURL: keyId.KeyVaultBaseUrl,
 			KeyName:      keyId.Name,
 			KeyVersion:   keyId.Version,
 		}
+
+		if keyVaultUAI := d.Get("key_vault_user_assigned_identity_id").(string); keyVaultUAI != "" {
+			containerGroup.Properties.EncryptionProperties.Identity = &keyVaultUAI
+		}
+	}
+
+	if priority := d.Get("priority").(string); priority != "" {
+		containerGroup.Properties.Priority = pointer.To(containerinstance.ContainerGroupPriority(priority))
 	}
 
 	// Avoid parallel provisioning if "subnet_ids" are given.
 	if subnets != nil && len(*subnets) != 0 {
 		for _, item := range *subnets {
-			subnet, err := networkParse.SubnetID(item.Id)
+			subnet, err := commonids.ParseSubnetID(item.Id)
 			if err != nil {
 				return fmt.Errorf(`parsing subnet id %q: %v`, item.Id, err)
 			}
@@ -778,14 +779,62 @@ func resourceContainerGroupUpdate(d *pluginsdk.ResourceData, meta interface{}) e
 		return err
 	}
 
-	t := d.Get("tags").(map[string]interface{})
-
-	parameters := containerinstance.Resource{
-		Tags: tags.Expand(t),
+	existing, err := client.ContainerGroupsGet(ctx, *id)
+	if err != nil {
+		return fmt.Errorf("reading %s: %v", id, err)
+	}
+	if existing.Model == nil {
+		return fmt.Errorf("reading %s: `model` was nil", id)
 	}
 
-	if _, err := client.ContainerGroupsUpdate(ctx, *id, parameters); err != nil {
-		return fmt.Errorf("updating %s: %+v", *id, err)
+	model := *existing.Model
+
+	if d.HasChange("identity") {
+		expandedIdentity, err := identity.ExpandSystemAndUserAssignedMap(d.Get("identity").([]interface{}))
+		if err != nil {
+			return fmt.Errorf("expanding `identity`: %+v", err)
+		}
+		model.Identity = expandedIdentity
+
+		// As API doesn't return the value of StorageAccountKey, so it has to get the value from tf config and set it to request payload. Otherwise, the Update API call would fail
+		addedEmptyDirs := map[string]bool{}
+		_, initContainerVolumes, err := expandContainerGroupInitContainers(d, addedEmptyDirs)
+		if err != nil {
+			return err
+		}
+		_, _, containerVolumes, err := expandContainerGroupContainers(d, addedEmptyDirs)
+		if err != nil {
+			return err
+		}
+		var containerGroupVolumes []containerinstance.Volume
+		if initContainerVolumes != nil {
+			containerGroupVolumes = initContainerVolumes
+		}
+		if containerGroupVolumes != nil {
+			containerGroupVolumes = append(containerGroupVolumes, containerVolumes...)
+		}
+		model.Properties.Volumes = pointer.To(containerGroupVolumes)
+
+		// As API doesn't return the value of WorkspaceKey, so it has to get the value from tf config and set it to request payload. Otherwise, the Update API call would fail
+		if diagnostics := expandContainerGroupDiagnostics(d.Get("diagnostics").([]interface{})); diagnostics != nil && diagnostics.LogAnalytics != nil {
+			model.Properties.Diagnostics.LogAnalytics.WorkspaceKey = diagnostics.LogAnalytics.WorkspaceKey
+		}
+
+		// As Update API doesn't support to update identity, so it has to use CreateOrUpdate API to update identity
+		if err := client.ContainerGroupsCreateOrUpdateThenPoll(ctx, *id, model); err != nil {
+			return fmt.Errorf("updating %s: %+v", *id, err)
+		}
+	}
+
+	if d.HasChange("tags") {
+		updateParameters := containerinstance.Resource{
+			Tags: tags.Expand(d.Get("tags").(map[string]interface{})),
+		}
+
+		// As CreateOrUpdate API doesn't support to update tags, so it has to use Update API to update tags
+		if _, err := client.ContainerGroupsUpdate(ctx, *id, updateParameters); err != nil {
+			return fmt.Errorf("updating tags %s: %+v", *id, err)
+		}
 	}
 
 	return resourceContainerGroupRead(d, meta)
@@ -831,6 +880,19 @@ func resourceContainerGroupRead(d *pluginsdk.ResourceData, meta interface{}) err
 		d.Set("zones", zones.FlattenUntyped(model.Zones))
 
 		props := model.Properties
+
+		var sku string
+		if v := props.Sku; v != nil {
+			sku = string(*v)
+		}
+		d.Set("sku", sku)
+
+		var priority string
+		if v := props.Priority; v != nil {
+			priority = string(*v)
+		}
+		d.Set("priority", priority)
+
 		containerConfigs := flattenContainerGroupContainers(d, &props.Containers, props.Volumes)
 		if err := d.Set("container", containerConfigs); err != nil {
 			return fmt.Errorf("setting `container`: %+v", err)
@@ -861,7 +923,7 @@ func resourceContainerGroupRead(d *pluginsdk.ResourceData, meta interface{}) err
 				d.Set("dns_name_label_reuse_policy", containerinstance.DnsNameLabelReusePolicyUnsecure)
 			}
 		} else {
-			d.Set("dns_name_label_reuse_policy", pointer.FromString(string(containerinstance.DnsNameLabelReusePolicyUnsecure)))
+			d.Set("dns_name_label_reuse_policy", pointer.To(string(containerinstance.DnsNameLabelReusePolicyUnsecure)))
 		}
 
 		restartPolicy := ""
@@ -887,8 +949,8 @@ func resourceContainerGroupRead(d *pluginsdk.ResourceData, meta interface{}) err
 
 		if kvProps := props.EncryptionProperties; kvProps != nil {
 			var keyVaultUri, keyName, keyVersion string
-			if kvProps.VaultBaseUrl != "" {
-				keyVaultUri = kvProps.VaultBaseUrl
+			if kvProps.VaultBaseURL != "" {
+				keyVaultUri = kvProps.VaultBaseURL
 			} else {
 				return fmt.Errorf("empty value returned for Key Vault URI")
 			}
@@ -898,11 +960,12 @@ func resourceContainerGroupRead(d *pluginsdk.ResourceData, meta interface{}) err
 				return fmt.Errorf("empty value returned for Key Vault Key Name")
 			}
 			keyVersion = kvProps.KeyVersion
-			keyId, err := keyVaultParse.NewNestedItemID(keyVaultUri, "keys", keyName, keyVersion)
+			keyId, err := keyVaultParse.NewNestedItemID(keyVaultUri, keyVaultParse.NestedItemTypeKey, keyName, keyVersion)
 			if err != nil {
 				return err
 			}
 			d.Set("key_vault_key_id", keyId.ID())
+			d.Set("key_vault_user_assigned_identity_id", pointer.From(kvProps.Identity))
 		}
 	}
 
@@ -962,7 +1025,7 @@ func resourceContainerGroupDelete(d *pluginsdk.ResourceData, meta interface{}) e
 		if subnetIDs := props.SubnetIds; subnetIDs != nil && len(*subnetIDs) != 0 {
 			// Avoid parallel deletion if "subnet_ids" are given.
 			for _, item := range *subnetIDs {
-				subnet, err := networkParse.SubnetID(item.Id)
+				subnet, err := commonids.ParseSubnetID(item.Id)
 				if err != nil {
 					return fmt.Errorf(`parsing subnet id %q: %v`, item.Id, err)
 				}
@@ -993,7 +1056,8 @@ func expandContainerGroupInitContainers(d *pluginsdk.ResourceData, addedEmptyDir
 		container := containerinstance.InitContainerDefinition{
 			Name: name,
 			Properties: containerinstance.InitContainerPropertiesDefinition{
-				Image: pointer.FromString(image),
+				Image:           pointer.To(image),
+				SecurityContext: expandContainerSecurityContext(data["security"].([]interface{})),
 			},
 		}
 
@@ -1047,6 +1111,37 @@ func expandContainerGroupInitContainers(d *pluginsdk.ResourceData, addedEmptyDir
 	return &containers, containerGroupVolumes, nil
 }
 
+func expandContainerSecurityContext(input []interface{}) *containerinstance.SecurityContextDefinition {
+	if len(input) == 0 || input[0] == nil {
+		return nil
+	}
+
+	raw := input[0].(map[string]interface{})
+
+	output := &containerinstance.SecurityContextDefinition{
+		Privileged: pointer.To(raw["privilege_enabled"].(bool)),
+	}
+
+	return output
+}
+
+func flattenContainerSecurityContext(input *containerinstance.SecurityContextDefinition) []interface{} {
+	if input == nil {
+		return []interface{}{}
+	}
+
+	var privileged bool
+	if v := input.Privileged; v != nil {
+		privileged = *v
+	}
+
+	return []interface{}{
+		map[string]interface{}{
+			"privilege_enabled": privileged,
+		},
+	}
+}
+
 func expandContainerGroupContainers(d *pluginsdk.ResourceData, addedEmptyDirs map[string]bool) ([]containerinstance.Container, []containerinstance.Port, []containerinstance.Volume, error) {
 	containersConfig := d.Get("container").([]interface{})
 	containers := make([]containerinstance.Container, 0)
@@ -1072,32 +1167,14 @@ func expandContainerGroupContainers(d *pluginsdk.ResourceData, addedEmptyDirs ma
 						Cpu:        cpu,
 					},
 				},
+				SecurityContext: expandContainerSecurityContext(data["security"].([]interface{})),
 			},
-		}
-
-		if v, ok := data["gpu"]; ok {
-			gpus := v.([]interface{})
-			for _, gpuRaw := range gpus {
-				if gpuRaw == nil {
-					continue
-				}
-				v := gpuRaw.(map[string]interface{})
-				gpuCount := int32(v["count"].(int))
-				gpuSku := containerinstance.GpuSku(v["sku"].(string))
-
-				gpus := containerinstance.GpuResource{
-					Count: int64(gpuCount),
-					Sku:   gpuSku,
-				}
-				container.Properties.Resources.Requests.Gpu = &gpus
-			}
 		}
 
 		cpuLimit := data["cpu_limit"].(float64)
 		memLimit := data["memory_limit"].(float64)
-		gpuLimit := data["gpu_limit"].([]interface{})
 
-		if !(cpuLimit == 0.0 && memLimit == 0.0 && len(gpuLimit) == 0) {
+		if !(cpuLimit == 0.0 && memLimit == 0.0) {
 			limits := &containerinstance.ResourceLimits{}
 			if cpuLimit != 0.0 {
 				limits.Cpu = &cpuLimit
@@ -1105,16 +1182,7 @@ func expandContainerGroupContainers(d *pluginsdk.ResourceData, addedEmptyDirs ma
 			if memLimit != 0.0 {
 				limits.MemoryInGB = &memLimit
 			}
-			if len(gpuLimit) == 1 && gpuLimit[0] != nil {
-				v := gpuLimit[0].(map[string]interface{})
-				limits.Gpu = &containerinstance.GpuResource{}
-				if v := int64(v["count"].(int)); v != 0 {
-					limits.Gpu.Count = v
-				}
-				if v := containerinstance.GpuSku(v["sku"].(string)); v != "" {
-					limits.Gpu.Sku = v
-				}
-			}
+
 			container.Properties.Resources.Limits = limits
 		}
 
@@ -1266,7 +1334,7 @@ func expandContainerEnvironmentVariables(input interface{}, secure bool) *[]cont
 		for k, v := range envVars {
 			ev := containerinstance.EnvironmentVariable{
 				Name:        k,
-				SecureValue: pointer.FromString(v.(string)),
+				SecureValue: pointer.To(v.(string)),
 			}
 
 			output = append(output, ev)
@@ -1275,7 +1343,7 @@ func expandContainerEnvironmentVariables(input interface{}, secure bool) *[]cont
 		for k, v := range envVars {
 			ev := containerinstance.EnvironmentVariable{
 				Name:  k,
-				Value: pointer.FromString(v.(string)),
+				Value: pointer.To(v.(string)),
 			}
 
 			output = append(output, ev)
@@ -1300,13 +1368,13 @@ func expandContainerImageRegistryCredentials(d *pluginsdk.ResourceData) *[]conta
 			imageRegistryCredential.Server = v.(string)
 		}
 		if v := credConfig["username"]; v != nil && v != "" {
-			imageRegistryCredential.Username = pointer.FromString(v.(string))
+			imageRegistryCredential.Username = pointer.To(v.(string))
 		}
 		if v := credConfig["password"]; v != nil && v != "" {
-			imageRegistryCredential.Password = pointer.FromString(v.(string))
+			imageRegistryCredential.Password = pointer.To(v.(string))
 		}
 		if v := credConfig["user_assigned_identity_id"]; v != nil && v != "" {
-			imageRegistryCredential.Identity = pointer.FromString(v.(string))
+			imageRegistryCredential.Identity = pointer.To(v.(string))
 		}
 
 		output = append(output, imageRegistryCredential)
@@ -1379,7 +1447,7 @@ func expandSingleContainerVolume(input interface{}) (*[]containerinstance.Volume
 				ShareName:          shareName,
 				ReadOnly:           pointer.FromBool(readOnly),
 				StorageAccountName: storageAccountName,
-				StorageAccountKey:  pointer.FromString(storageAccountKey),
+				StorageAccountKey:  pointer.To(storageAccountKey),
 			}
 		}
 
@@ -1398,10 +1466,10 @@ func expandGitRepoVolume(input []interface{}) *containerinstance.GitRepoVolume {
 		Repository: v["url"].(string),
 	}
 	if directory := v["directory"].(string); directory != "" {
-		gitRepoVolume.Directory = pointer.FromString(directory)
+		gitRepoVolume.Directory = pointer.To(directory)
 	}
 	if revision := v["revision"].(string); revision != "" {
-		gitRepoVolume.Revision = pointer.FromString(revision)
+		gitRepoVolume.Revision = pointer.To(revision)
 	}
 	return gitRepoVolume
 }
@@ -1474,8 +1542,9 @@ func expandContainerProbe(input interface{}) *containerinstance.ContainerProbe {
 				scheme := x["scheme"].(string)
 
 				httpGetScheme := containerinstance.Scheme(scheme)
+
 				probe.HTTPGet = &containerinstance.ContainerHTTPGet{
-					Path:        pointer.FromString(path),
+					Path:        pointer.To(path),
 					Port:        int64(port),
 					Scheme:      &httpGetScheme,
 					HTTPHeaders: expandContainerProbeHttpHeaders(x["http_headers"].(map[string]interface{})),
@@ -1494,8 +1563,8 @@ func expandContainerProbeHttpHeaders(input map[string]interface{}) *[]containeri
 	headers := []containerinstance.HTTPHeader{}
 	for k, v := range input {
 		header := containerinstance.HTTPHeader{
-			Name:  pointer.FromString(k),
-			Value: pointer.FromString(v.(string)),
+			Name:  pointer.To(k),
+			Value: pointer.To(v.(string)),
 		}
 		headers = append(headers, header)
 	}
@@ -1577,8 +1646,8 @@ func flattenContainerGroupInitContainers(d *pluginsdk.ResourceData, initContaine
 
 		if container.Properties.EnvironmentVariables != nil {
 			if len(*container.Properties.EnvironmentVariables) > 0 {
-				containerConfig["environment_variables"] = flattenContainerEnvironmentVariables(container.Properties.EnvironmentVariables, false, d, index)
-				containerConfig["secure_environment_variables"] = flattenContainerEnvironmentVariables(container.Properties.EnvironmentVariables, true, d, index)
+				containerConfig["environment_variables"] = flattenContainerEnvironmentVariables(container.Properties.EnvironmentVariables)
+				containerConfig["secure_environment_variables"] = flattenContainerSecureEnvironmentVariables(container.Properties.EnvironmentVariables, d, index, "init_container")
 			}
 		}
 
@@ -1592,6 +1661,9 @@ func flattenContainerGroupInitContainers(d *pluginsdk.ResourceData, initContaine
 			containersConfigRaw := d.Get("container").([]interface{})
 			flattenContainerVolume(containerConfig, containersConfigRaw, container.Name, container.Properties.VolumeMounts, containerGroupVolumes)
 		}
+
+		containerConfig["security"] = flattenContainerSecurityContext(container.Properties.SecurityContext)
+
 		containerCfg = append(containerCfg, containerConfig)
 	}
 
@@ -1623,15 +1695,6 @@ func flattenContainerGroupContainers(d *pluginsdk.ResourceData, containers *[]co
 		containerConfig["cpu"] = resourceRequests.Cpu
 		containerConfig["memory"] = resourceRequests.MemoryInGB
 
-		gpus := make([]interface{}, 0)
-		if v := resourceRequests.Gpu; v != nil {
-			gpu := make(map[string]interface{})
-			gpu["count"] = v.Count
-			gpu["sku"] = string(v.Sku)
-			gpus = append(gpus, gpu)
-		}
-		containerConfig["gpu"] = gpus
-
 		if resourceLimits := resources.Limits; resourceLimits != nil {
 			if v := resourceLimits.Cpu; v != nil {
 				containerConfig["cpu_limit"] = *v
@@ -1639,15 +1702,6 @@ func flattenContainerGroupContainers(d *pluginsdk.ResourceData, containers *[]co
 			if v := resourceLimits.MemoryInGB; v != nil {
 				containerConfig["memory_limit"] = *v
 			}
-
-			gpus := make([]interface{}, 0)
-			if v := resourceLimits.Gpu; v != nil {
-				gpu := make(map[string]interface{})
-				gpu["count"] = v.Count
-				gpu["sku"] = string(v.Sku)
-				gpus = append(gpus, gpu)
-			}
-			containerConfig["gpu_limit"] = gpus
 		}
 
 		containerPorts := make([]interface{}, len(*container.Properties.Ports))
@@ -1660,8 +1714,8 @@ func flattenContainerGroupContainers(d *pluginsdk.ResourceData, containers *[]co
 
 		if container.Properties.EnvironmentVariables != nil {
 			if len(*container.Properties.EnvironmentVariables) > 0 {
-				containerConfig["environment_variables"] = flattenContainerEnvironmentVariables(container.Properties.EnvironmentVariables, false, d, index)
-				containerConfig["secure_environment_variables"] = flattenContainerEnvironmentVariables(container.Properties.EnvironmentVariables, true, d, index)
+				containerConfig["environment_variables"] = flattenContainerEnvironmentVariables(container.Properties.EnvironmentVariables)
+				containerConfig["secure_environment_variables"] = flattenContainerSecureEnvironmentVariables(container.Properties.EnvironmentVariables, d, index, "container")
 			}
 		}
 
@@ -1678,6 +1732,7 @@ func flattenContainerGroupContainers(d *pluginsdk.ResourceData, containers *[]co
 
 		containerConfig["liveness_probe"] = flattenContainerProbes(container.Properties.LivenessProbe)
 		containerConfig["readiness_probe"] = flattenContainerProbes(container.Properties.ReadinessProbe)
+		containerConfig["security"] = flattenContainerSecurityContext(container.Properties.SecurityContext)
 
 		containerCfg = append(containerCfg, containerConfig)
 	}
@@ -1755,26 +1810,34 @@ func flattenContainerVolume(containerConfig map[string]interface{}, containersCo
 	containerConfig["volume"] = volumeConfigs
 }
 
-func flattenContainerEnvironmentVariables(input *[]containerinstance.EnvironmentVariable, isSecure bool, d *pluginsdk.ResourceData, oldContainerIndex int) map[string]interface{} {
+func flattenContainerSecureEnvironmentVariables(input *[]containerinstance.EnvironmentVariable, d *pluginsdk.ResourceData, oldContainerIndex int, rootPropName string) map[string]interface{} {
 	output := make(map[string]interface{})
 
 	if input == nil {
 		return output
 	}
 
-	if isSecure {
-		for _, envVar := range *input {
-			if envVar.Value == nil {
-				envVarValue := d.Get(fmt.Sprintf("container.%d.secure_environment_variables.%s", oldContainerIndex, envVar.Name))
-				output[envVar.Name] = envVarValue
-			}
+	for _, envVar := range *input {
+		if envVar.Value == nil {
+			envVarValue := d.Get(fmt.Sprintf("%s.%d.secure_environment_variables.%s", rootPropName, oldContainerIndex, envVar.Name))
+			output[envVar.Name] = envVarValue
 		}
-	} else {
-		for _, envVar := range *input {
-			if envVar.Value != nil {
-				log.Printf("[DEBUG] NOT SECURE: Name: %s - Value: %s", envVar.Name, *envVar.Value)
-				output[envVar.Name] = *envVar.Value
-			}
+	}
+
+	return output
+}
+
+func flattenContainerEnvironmentVariables(input *[]containerinstance.EnvironmentVariable) map[string]interface{} {
+	output := make(map[string]interface{})
+
+	if input == nil {
+		return output
+	}
+
+	for _, envVar := range *input {
+		if envVar.Value != nil {
+			log.Printf("[DEBUG] NOT SECURE: Name: %s - Value: %s", envVar.Name, *envVar.Value)
+			output[envVar.Name] = *envVar.Value
 		}
 	}
 
@@ -1989,8 +2052,8 @@ func expandContainerGroupDnsConfig(input interface{}) *containerinstance.DnsConf
 		}
 
 		return &containerinstance.DnsConfiguration{
-			Options:       pointer.FromString(strings.Join(options, " ")),
-			SearchDomains: pointer.FromString(strings.Join(searchDomains, " ")),
+			Options:       pointer.To(strings.Join(options, " ")),
+			SearchDomains: pointer.To(strings.Join(searchDomains, " ")),
 			NameServers:   nameservers,
 		}
 	}
@@ -2009,7 +2072,7 @@ func flattenContainerGroupSubnets(input *[]containerinstance.ContainerGroupSubne
 			continue
 		}
 
-		id, err := networkParse.SubnetIDInsensitively(resourceRef.Id)
+		id, err := commonids.ParseSubnetIDInsensitively(resourceRef.Id)
 		if err != nil {
 			return nil, fmt.Errorf(`parsing subnet id %q: %v`, resourceRef.Id, err)
 		}
@@ -2027,7 +2090,7 @@ func expandContainerGroupSubnets(input []interface{}) (*[]containerinstance.Cont
 
 	results := make([]containerinstance.ContainerGroupSubnetId, 0)
 	for _, item := range input {
-		id, err := networkParse.SubnetID(item.(string))
+		id, err := commonids.ParseSubnetID(item.(string))
 		if err != nil {
 			return nil, fmt.Errorf(`parsing subnet id %q: %v`, item, err)
 		}

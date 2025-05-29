@@ -1,3 +1,6 @@
+// Copyright (c) HashiCorp, Inc.
+// SPDX-License-Identifier: MPL-2.0
+
 package frontdoor
 
 import (
@@ -227,8 +230,8 @@ func resourceFrontDoorFirewallPolicy() *pluginsdk.Resource {
 												string(webapplicationfirewallpolicies.TransformTypeRemoveNulls),
 												string(webapplicationfirewallpolicies.TransformTypeTrim),
 												string(webapplicationfirewallpolicies.TransformTypeUppercase),
-												string(webapplicationfirewallpolicies.TransformTypeUrlDecode),
-												string(webapplicationfirewallpolicies.TransformTypeUrlEncode),
+												string(webapplicationfirewallpolicies.TransformTypeURLDecode),
+												string(webapplicationfirewallpolicies.TransformTypeURLEncode),
 											}, false),
 										},
 									},
@@ -481,7 +484,7 @@ func resourceFrontDoorFirewallPolicyCreateUpdate(d *pluginsdk.ResourceData, meta
 	}
 
 	if redirectUrl != "" {
-		frontdoorWebApplicationFirewallPolicy.Properties.PolicySettings.RedirectUrl = utils.String(redirectUrl)
+		frontdoorWebApplicationFirewallPolicy.Properties.PolicySettings.RedirectURL = utils.String(redirectUrl)
 	}
 	if customBlockResponseBody != "" {
 		frontdoorWebApplicationFirewallPolicy.Properties.PolicySettings.CustomBlockResponseBody = utils.String(customBlockResponseBody)
@@ -533,7 +536,7 @@ func resourceFrontDoorFirewallPolicyRead(d *pluginsdk.ResourceData, meta interfa
 				if policy.Mode != nil {
 					d.Set("mode", string(*policy.Mode))
 				}
-				d.Set("redirect_url", policy.RedirectUrl)
+				d.Set("redirect_url", policy.RedirectURL)
 				d.Set("custom_block_response_status_code", policy.CustomBlockResponseStatusCode)
 				d.Set("custom_block_response_body", policy.CustomBlockResponseBody)
 			}

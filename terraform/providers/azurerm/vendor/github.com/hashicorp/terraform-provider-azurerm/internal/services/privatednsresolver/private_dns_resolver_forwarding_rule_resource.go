@@ -1,3 +1,6 @@
+// Copyright (c) HashiCorp, Inc.
+// SPDX-License-Identifier: MPL-2.0
+
 package privatednsresolver
 
 import (
@@ -62,6 +65,7 @@ func (r PrivateDNSResolverForwardingRuleResource) Arguments() map[string]*plugin
 		"domain_name": {
 			Type:         pluginsdk.TypeString,
 			Required:     true,
+			ForceNew:     true,
 			ValidateFunc: validation.StringIsNotEmpty,
 		},
 
@@ -206,8 +210,6 @@ func (r PrivateDNSResolverForwardingRuleResource) Update() sdk.ResourceFunc {
 				}
 			}
 
-			properties.SystemData = nil
-
 			if _, err := client.CreateOrUpdate(ctx, *id, *properties, forwardingrules.CreateOrUpdateOperationOptions{}); err != nil {
 				return fmt.Errorf("updating %s: %+v", *id, err)
 			}
@@ -287,7 +289,7 @@ func (r PrivateDNSResolverForwardingRuleResource) Delete() sdk.ResourceFunc {
 }
 
 func expandTargetDnsServerModel(inputList []TargetDnsServerModel) *[]forwardingrules.TargetDnsServer {
-	var outputList []forwardingrules.TargetDnsServer
+	outputList := make([]forwardingrules.TargetDnsServer, 0, len(inputList))
 	for _, v := range inputList {
 		input := v
 		output := forwardingrules.TargetDnsServer{
@@ -302,11 +304,11 @@ func expandTargetDnsServerModel(inputList []TargetDnsServerModel) *[]forwardingr
 }
 
 func flattenTargetDnsServerModel(inputList *[]forwardingrules.TargetDnsServer) []TargetDnsServerModel {
-	var outputList []TargetDnsServerModel
 	if inputList == nil {
-		return outputList
+		return []TargetDnsServerModel{}
 	}
 
+	outputList := make([]TargetDnsServerModel, 0, len(*inputList))
 	for _, input := range *inputList {
 		output := TargetDnsServerModel{
 			IPAddress: input.IPAddress,

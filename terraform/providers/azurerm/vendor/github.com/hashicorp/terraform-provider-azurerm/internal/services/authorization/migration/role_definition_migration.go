@@ -1,3 +1,6 @@
+// Copyright (c) HashiCorp, Inc.
+// SPDX-License-Identifier: MPL-2.0
+
 package migration
 
 import (
@@ -37,7 +40,7 @@ func (RoleDefinitionV0ToV1) Schema() map[string]*pluginsdk.Schema {
 			Optional: true,
 		},
 
-		//lintignore:XS003
+		// lintignore:XS003
 		"permissions": {
 			Type:     pluginsdk.TypeList,
 			Required: true,

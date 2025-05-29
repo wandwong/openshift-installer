@@ -1,3 +1,6 @@
+// Copyright (c) HashiCorp, Inc.
+// SPDX-License-Identifier: MPL-2.0
+
 package migration
 
 import (
@@ -840,7 +843,7 @@ func accountSchemaForV2() map[string]*pluginsdk.Schema {
 			},
 		},
 
-		//lintignore:XS003
+		// lintignore:XS003
 		"static_website": {
 			Type:     pluginsdk.TypeList,
 			Optional: true,

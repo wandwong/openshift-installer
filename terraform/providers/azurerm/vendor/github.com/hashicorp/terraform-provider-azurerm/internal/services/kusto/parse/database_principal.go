@@ -1,8 +1,12 @@
+// Copyright (c) HashiCorp, Inc.
+// SPDX-License-Identifier: MPL-2.0
+
 package parse
 
 // NOTE: this file is generated via 'go:generate' - manual changes will be overwritten
 
 import (
+	"errors"
 	"fmt"
 	"strings"
 
@@ -31,7 +35,7 @@ func NewDatabasePrincipalID(subscriptionId, resourceGroup, clusterName, database
 
 func (id DatabasePrincipalId) String() string {
 	segments := []string{
-		fmt.Sprintf("F Q N Name %q", id.FQNName),
+		fmt.Sprintf("FQN Name %q", id.FQNName),
 		fmt.Sprintf("Role Name %q", id.RoleName),
 		fmt.Sprintf("Database Name %q", id.DatabaseName),
 		fmt.Sprintf("Cluster Name %q", id.ClusterName),
@@ -50,7 +54,7 @@ func (id DatabasePrincipalId) ID() string {
 func DatabasePrincipalID(input string) (*DatabasePrincipalId, error) {
 	id, err := resourceids.ParseAzureResourceID(input)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("parsing %q as an DatabasePrincipal ID: %+v", input, err)
 	}
 
 	resourceId := DatabasePrincipalId{
@@ -59,11 +63,11 @@ func DatabasePrincipalID(input string) (*DatabasePrincipalId, error) {
 	}
 
 	if resourceId.SubscriptionId == "" {
-		return nil, fmt.Errorf("ID was missing the 'subscriptions' element")
+		return nil, errors.New("ID was missing the 'subscriptions' element")
 	}
 
 	if resourceId.ResourceGroup == "" {
-		return nil, fmt.Errorf("ID was missing the 'resourceGroups' element")
+		return nil, errors.New("ID was missing the 'resourceGroups' element")
 	}
 
 	if resourceId.ClusterName, err = id.PopSegment("Clusters"); err != nil {

@@ -1,3 +1,6 @@
+// Copyright (c) HashiCorp, Inc.
+// SPDX-License-Identifier: MPL-2.0
+
 package frontdoor
 
 import (
@@ -17,7 +20,7 @@ import (
 	"github.com/hashicorp/terraform-provider-azurerm/internal/clients"
 	"github.com/hashicorp/terraform-provider-azurerm/internal/services/frontdoor/migration"
 	"github.com/hashicorp/terraform-provider-azurerm/internal/services/frontdoor/parse"
-	azValidate "github.com/hashicorp/terraform-provider-azurerm/internal/services/frontdoor/validate"
+	frontDoorValidate "github.com/hashicorp/terraform-provider-azurerm/internal/services/frontdoor/validate"
 	"github.com/hashicorp/terraform-provider-azurerm/internal/tf/pluginsdk"
 	"github.com/hashicorp/terraform-provider-azurerm/internal/tf/validation"
 	"github.com/hashicorp/terraform-provider-azurerm/internal/timeouts"
@@ -135,18 +138,16 @@ func resourceFrontDoorUpdate(d *pluginsdk.ResourceData, meta interface{}) error 
 	// remove in 3.0
 	// due to a change in the RP, if a Frontdoor exists in a location other than 'Global' it may continue to
 	// exist in that location, if this is a brand new Frontdoor it must be created in the 'Global' location
-	location := "Global"
-	cfgLocation, hasLocation := d.GetOk("location")
+	var location string
 
 	exists, err := client.Get(ctx, id)
 	if err != nil || exists.Model == nil {
-		if !response.WasNotFound(exists.HttpResponse) {
-			return fmt.Errorf("locating %s: %+v", id, err)
-		}
+		return fmt.Errorf("locating %s: %+v", id, err)
 	} else {
 		location = azure.NormalizeLocation(*exists.Model.Location)
 	}
 
+	cfgLocation, hasLocation := d.GetOk("location")
 	if hasLocation {
 		if location != azure.NormalizeLocation(cfgLocation) {
 			return fmt.Errorf("the Front Door %q (Resource Group %q) already exists in %q and cannot be moved to the %q location", name, resourceGroup, location, cfgLocation)
@@ -669,7 +670,7 @@ func expandFrontDoorRoutingRule(input []interface{}, frontDoorId frontdoors.Fron
 				AcceptedProtocols:  expandFrontDoorAcceptedProtocols(acceptedProtocols),
 				PatternsToMatch:    &patternsToMatch,
 				EnabledState:       &enabled,
-				RouteConfiguration: &routingConfiguration,
+				RouteConfiguration: routingConfiguration,
 			},
 		}
 
@@ -905,9 +906,8 @@ func flattenExplicitResourceOrder(backendPools, frontendEndpoints, routingRules,
 
 func combineBackendPools(allPools []frontdoors.BackendPool, orderedIds []interface{}, frontDoorId frontdoors.FrontDoorId) ([]interface{}, error) {
 	output := make([]interface{}, 0)
-	found := false
 
-	// first find all of the ones in the ordered mapping list and add them in the correct order
+	// first find all the ones in the ordered mapping list and add them in the correct order
 	for _, v := range orderedIds {
 		for _, backend := range allPools {
 			if strings.EqualFold(v.(string), *backend.Id) {
@@ -924,7 +924,7 @@ func combineBackendPools(allPools []frontdoors.BackendPool, orderedIds []interfa
 
 	// Now check to see if items were added to the resource via the portal and add them to the state file
 	for _, backend := range allPools {
-		found = false
+		found := false
 		for _, orderedId := range orderedIds {
 			if strings.EqualFold(orderedId.(string), *backend.Id) {
 				found = true
@@ -1110,9 +1110,8 @@ func retrieveFrontEndEndpointInformation(ctx context.Context, client *frontdoors
 
 func combineFrontEndEndpoints(allEndpoints []frontdoors.FrontendEndpoint, orderedIds []interface{}, frontDoorId frontdoors.FrontDoorId) ([]interface{}, error) {
 	output := make([]interface{}, 0)
-	found := false
 
-	// first find all of the ones in the ordered mapping list and add them in the correct order
+	// first find all the ones in the ordered mapping list and add them in the correct order
 	for _, v := range orderedIds {
 		for _, frontendEndpoint := range allEndpoints {
 			if strings.EqualFold(v.(string), *frontendEndpoint.Id) {
@@ -1129,7 +1128,7 @@ func combineFrontEndEndpoints(allEndpoints []frontdoors.FrontendEndpoint, ordere
 
 	// Now check to see if items were added to the resource via the portal and add them to the state file
 	for _, frontendEndpoint := range allEndpoints {
-		found = false
+		found := false
 		for _, orderedId := range orderedIds {
 			if strings.EqualFold(orderedId.(string), *frontendEndpoint.Id) {
 				found = true
@@ -1230,9 +1229,8 @@ func flattenSingleFrontEndEndpoints(input frontdoors.FrontendEndpoint, frontDoor
 
 func combineHealthProbeSettingsModel(allHealthProbeSettings []frontdoors.HealthProbeSettingsModel, orderedIds []interface{}, frontDoorId frontdoors.FrontDoorId) []interface{} {
 	output := make([]interface{}, 0)
-	found := false
 
-	// first find all of the ones in the ordered mapping list and add them in the correct order
+	// first find all the ones in the ordered mapping list and add them in the correct order
 	for _, v := range orderedIds {
 		for _, healthProbeSetting := range allHealthProbeSettings {
 			if strings.EqualFold(v.(string), *healthProbeSetting.Id) {
@@ -1245,7 +1243,7 @@ func combineHealthProbeSettingsModel(allHealthProbeSettings []frontdoors.HealthP
 
 	// Now check to see if items were added to the resource via the portal and add them to the state file
 	for _, healthProbeSetting := range allHealthProbeSettings {
-		found = false
+		found := false
 		for _, orderedId := range orderedIds {
 			if strings.EqualFold(orderedId.(string), *healthProbeSetting.Id) {
 				found = true
@@ -1336,9 +1334,8 @@ func flattenSingleFrontDoorHealthProbeSettingsModel(input *frontdoors.HealthProb
 
 func combineLoadBalancingSettingsModel(allLoadBalancingSettings []frontdoors.LoadBalancingSettingsModel, orderedIds []interface{}, frontDoorId frontdoors.FrontDoorId) []interface{} {
 	output := make([]interface{}, 0)
-	found := false
 
-	// first find all of the ones in the ordered mapping list and add them in the correct order
+	// first find all the ones in the ordered mapping list and add them in the correct order
 	for _, v := range orderedIds {
 		for _, loadBalancingSetting := range allLoadBalancingSettings {
 			if strings.EqualFold(v.(string), *loadBalancingSetting.Id) {
@@ -1351,7 +1348,7 @@ func combineLoadBalancingSettingsModel(allLoadBalancingSettings []frontdoors.Loa
 
 	// Now check to see if items were added to the resource via the portal and add them to the state file
 	for _, loadBalanceSetting := range allLoadBalancingSettings {
-		found = false
+		found := false
 		for _, orderedId := range orderedIds {
 			if strings.EqualFold(orderedId.(string), *loadBalanceSetting.Id) {
 				found = true
@@ -1430,9 +1427,8 @@ func flattenSingleFrontDoorLoadBalancingSettingsModel(input *frontdoors.LoadBala
 
 func combineRoutingRules(allRoutingRules []frontdoors.RoutingRule, oldBlocks interface{}, orderedIds []interface{}, frontDoorId frontdoors.FrontDoorId) ([]interface{}, error) {
 	output := make([]interface{}, 0)
-	found := false
 
-	// first find all of the ones in the ordered mapping list and add them in the correct order
+	// first find all the ones in the ordered mapping list and add them in the correct order
 	for _, v := range orderedIds {
 		for _, routingRule := range allRoutingRules {
 			if strings.EqualFold(v.(string), *routingRule.Id) {
@@ -1449,7 +1445,7 @@ func combineRoutingRules(allRoutingRules []frontdoors.RoutingRule, oldBlocks int
 
 	// Now check to see if items were added to the resource via the portal and add them to the state file
 	for _, routingRule := range allRoutingRules {
-		found = false
+		found := false
 		for _, orderedId := range orderedIds {
 			if strings.EqualFold(orderedId.(string), *routingRule.Id) {
 				found = true
@@ -1725,7 +1721,7 @@ func resourceFrontDoorSchema() map[string]*pluginsdk.Schema {
 			Type:         pluginsdk.TypeString,
 			Required:     true,
 			ForceNew:     true,
-			ValidateFunc: azValidate.FrontDoorName,
+			ValidateFunc: frontDoorValidate.FrontDoorName,
 		},
 
 		"cname": {
@@ -1764,7 +1760,7 @@ func resourceFrontDoorSchema() map[string]*pluginsdk.Schema {
 					"name": {
 						Type:         pluginsdk.TypeString,
 						Required:     true,
-						ValidateFunc: azValidate.BackendPoolRoutingRuleName,
+						ValidateFunc: frontDoorValidate.BackendPoolRoutingRuleName,
 					},
 					"enabled": {
 						Type:     pluginsdk.TypeBool,
@@ -1854,7 +1850,7 @@ func resourceFrontDoorSchema() map[string]*pluginsdk.Schema {
 								"backend_pool_name": {
 									Type:         pluginsdk.TypeString,
 									Required:     true,
-									ValidateFunc: azValidate.BackendPoolRoutingRuleName,
+									ValidateFunc: frontDoorValidate.BackendPoolRoutingRuleName,
 								},
 								"cache_enabled": {
 									Type:     pluginsdk.TypeBool,
@@ -1925,7 +1921,7 @@ func resourceFrontDoorSchema() map[string]*pluginsdk.Schema {
 					"name": {
 						Type:         pluginsdk.TypeString,
 						Required:     true,
-						ValidateFunc: azValidate.BackendPoolRoutingRuleName,
+						ValidateFunc: frontDoorValidate.BackendPoolRoutingRuleName,
 					},
 					"sample_size": {
 						Type:     pluginsdk.TypeInt,
@@ -1959,7 +1955,7 @@ func resourceFrontDoorSchema() map[string]*pluginsdk.Schema {
 					"name": {
 						Type:         pluginsdk.TypeString,
 						Required:     true,
-						ValidateFunc: azValidate.BackendPoolRoutingRuleName,
+						ValidateFunc: frontDoorValidate.BackendPoolRoutingRuleName,
 					},
 					"enabled": {
 						Type:     pluginsdk.TypeBool,
@@ -2054,7 +2050,7 @@ func resourceFrontDoorSchema() map[string]*pluginsdk.Schema {
 					"name": {
 						Type:         pluginsdk.TypeString,
 						Required:     true,
-						ValidateFunc: azValidate.BackendPoolRoutingRuleName,
+						ValidateFunc: frontDoorValidate.BackendPoolRoutingRuleName,
 					},
 					"health_probe_name": {
 						Type:     pluginsdk.TypeString,
@@ -2101,7 +2097,7 @@ func resourceFrontDoorSchema() map[string]*pluginsdk.Schema {
 					"name": {
 						Type:         pluginsdk.TypeString,
 						Required:     true,
-						ValidateFunc: azValidate.BackendPoolRoutingRuleName,
+						ValidateFunc: frontDoorValidate.BackendPoolRoutingRuleName,
 					},
 					"host_name": {
 						Type:     pluginsdk.TypeString,
@@ -2120,7 +2116,7 @@ func resourceFrontDoorSchema() map[string]*pluginsdk.Schema {
 					"web_application_firewall_policy_link_id": {
 						Type:         pluginsdk.TypeString,
 						Optional:     true,
-						ValidateFunc: azure.ValidateResourceID,
+						ValidateFunc: frontDoorValidate.WebApplicationFirewallPolicyID,
 					},
 				},
 			},

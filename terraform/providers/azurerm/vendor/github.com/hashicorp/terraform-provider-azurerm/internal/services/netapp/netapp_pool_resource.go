@@ -1,3 +1,6 @@
+// Copyright (c) HashiCorp, Inc.
+// SPDX-License-Identifier: MPL-2.0
+
 package netapp
 
 import (
@@ -7,10 +10,11 @@ import (
 	"strconv"
 	"time"
 
+	"github.com/hashicorp/go-azure-helpers/lang/pointer"
 	"github.com/hashicorp/go-azure-helpers/lang/response"
 	"github.com/hashicorp/go-azure-helpers/resourcemanager/commonschema"
 	"github.com/hashicorp/go-azure-helpers/resourcemanager/tags"
-	"github.com/hashicorp/go-azure-sdk/resource-manager/netapp/2022-05-01/capacitypools"
+	"github.com/hashicorp/go-azure-sdk/resource-manager/netapp/2025-01-01/capacitypools"
 	"github.com/hashicorp/terraform-provider-azurerm/helpers/azure"
 	"github.com/hashicorp/terraform-provider-azurerm/helpers/tf"
 	"github.com/hashicorp/terraform-provider-azurerm/internal/clients"
@@ -22,7 +26,7 @@ import (
 )
 
 func resourceNetAppPool() *pluginsdk.Resource {
-	return &pluginsdk.Resource{
+	resource := &pluginsdk.Resource{
 		Create: resourceNetAppPoolCreate,
 		Read:   resourceNetAppPoolRead,
 		Update: resourceNetAppPoolUpdate,
@@ -72,22 +76,48 @@ func resourceNetAppPool() *pluginsdk.Resource {
 			"size_in_tb": {
 				Type:         pluginsdk.TypeInt,
 				Required:     true,
-				ValidateFunc: validation.IntBetween(4, 500),
+				ValidateFunc: validation.IntBetween(1, 2048),
 			},
 
 			"qos_type": {
 				Type:     pluginsdk.TypeString,
 				Optional: true,
-				Computed: true,
+				Default:  string(capacitypools.QosTypeAuto),
 				ValidateFunc: validation.StringInSlice([]string{
 					string(capacitypools.QosTypeAuto),
 					string(capacitypools.QosTypeManual),
 				}, false),
 			},
 
+			"encryption_type": {
+				Type:     pluginsdk.TypeString,
+				Optional: true,
+				ForceNew: true,
+				Default:  capacitypools.EncryptionTypeSingle,
+				ValidateFunc: validation.StringInSlice([]string{
+					string(capacitypools.EncryptionTypeSingle),
+					string(capacitypools.EncryptionTypeDouble),
+				}, false),
+			},
+
+			"cool_access_enabled": {
+				Type:     pluginsdk.TypeBool,
+				Optional: true,
+				Default:  false,
+			},
+
 			"tags": commonschema.Tags(),
 		},
+
+		CustomizeDiff: pluginsdk.CustomDiffWithAll(
+			// `cool_access_enabled` cannot be disabled
+			pluginsdk.ForceNewIfChange("cool_access_enabled", func(ctx context.Context, old, new, meta interface{}) bool {
+				return old.(bool) && !new.(bool)
+			}),
+		),
 	}
+
+	return resource
 }
 
 func resourceNetAppPoolCreate(d *pluginsdk.ResourceData, meta interface{}) error {
@@ -113,11 +143,15 @@ func resourceNetAppPoolCreate(d *pluginsdk.ResourceData, meta interface{}) error
 	sizeInMB := sizeInTB * 1024 * 1024
 	sizeInBytes := sizeInMB * 1024 * 1024
 
+	encryptionType := capacitypools.EncryptionType(d.Get("encryption_type").(string))
+
 	capacityPoolParameters := capacitypools.CapacityPool{
 		Location: azure.NormalizeLocation(d.Get("location").(string)),
 		Properties: capacitypools.PoolProperties{
-			ServiceLevel: capacitypools.ServiceLevel(d.Get("service_level").(string)),
-			Size:         sizeInBytes,
+			ServiceLevel:   capacitypools.ServiceLevel(d.Get("service_level").(string)),
+			Size:           sizeInBytes,
+			EncryptionType: &encryptionType,
+			CoolAccess:     pointer.To(d.Get("cool_access_enabled").(bool)),
 		},
 		Tags: tags.Expand(d.Get("tags").(map[string]interface{})),
 	}
@@ -150,14 +184,11 @@ func resourceNetAppPoolUpdate(d *pluginsdk.ResourceData, meta interface{}) error
 		return err
 	}
 
-	shouldUpdate := false
 	update := capacitypools.CapacityPoolPatch{
 		Properties: &capacitypools.PoolPatchProperties{},
 	}
 
 	if d.HasChange("size_in_tb") {
-		shouldUpdate = true
-
 		sizeInTB := int64(d.Get("size_in_tb").(int))
 		sizeInMB := sizeInTB * 1024 * 1024
 		sizeInBytes := sizeInMB * 1024 * 1024
@@ -166,26 +197,26 @@ func resourceNetAppPoolUpdate(d *pluginsdk.ResourceData, meta interface{}) error
 	}
 
 	if d.HasChange("qos_type") {
-		shouldUpdate = true
 		qosType := capacitypools.QosType(d.Get("qos_type").(string))
 		update.Properties.QosType = &qosType
 	}
 
+	if d.HasChange("cool_access_enabled") {
+		update.Properties.CoolAccess = pointer.To(d.Get("cool_access_enabled").(bool))
+	}
+
 	if d.HasChange("tags") {
-		shouldUpdate = true
 		tagsRaw := d.Get("tags").(map[string]interface{})
 		update.Tags = tags.Expand(tagsRaw)
 	}
 
-	if shouldUpdate {
-		if err = client.PoolsUpdateThenPoll(ctx, *id, update); err != nil {
-			return fmt.Errorf("updating %s: %+v", id.ID(), err)
-		}
+	if err = client.PoolsUpdateThenPoll(ctx, *id, update); err != nil {
+		return fmt.Errorf("updating %s: %+v", id.ID(), err)
+	}
 
-		// Wait for pool to complete update
-		if err = waitForPoolCreateOrUpdate(ctx, client, *id); err != nil {
-			return err
-		}
+	// Wait for pool to complete update
+	if err = waitForPoolCreateOrUpdate(ctx, client, *id); err != nil {
+		return err
 	}
 
 	return resourceNetAppPoolRead(d, meta)
@@ -221,16 +252,17 @@ func resourceNetAppPoolRead(d *pluginsdk.ResourceData, meta interface{}) error {
 		poolProperties := model.Properties
 		d.Set("service_level", poolProperties.ServiceLevel)
 
-		sizeInTB := int64(0)
 		sizeInBytes := poolProperties.Size
 		sizeInMB := sizeInBytes / 1024 / 1024
-		sizeInTB = sizeInMB / 1024 / 1024
+		sizeInTB := sizeInMB / 1024 / 1024
 		d.Set("size_in_tb", int(sizeInTB))
 		qosType := ""
 		if poolProperties.QosType != nil {
 			qosType = string(*poolProperties.QosType)
 		}
 		d.Set("qos_type", qosType)
+		d.Set("encryption_type", string(pointer.From(poolProperties.EncryptionType)))
+		d.Set("cool_access_enabled", pointer.From(poolProperties.CoolAccess))
 
 		return tags.FlattenAndSet(d, model.Tags)
 	}
@@ -288,14 +320,18 @@ func netappPoolDeleteStateRefreshFunc(ctx context.Context, client *capacitypools
 			}
 		}
 
-		return res, strconv.Itoa(res.HttpResponse.StatusCode), nil
+		statusCode := "dropped connection"
+		if res.HttpResponse != nil {
+			statusCode = strconv.Itoa(res.HttpResponse.StatusCode)
+		}
+		return res, statusCode, nil
 	}
 }
 
 func waitForPoolCreateOrUpdate(ctx context.Context, client *capacitypools.CapacityPoolsClient, id capacitypools.CapacityPoolId) error {
 	deadline, ok := ctx.Deadline()
 	if !ok {
-		return fmt.Errorf("context had no deadline")
+		return fmt.Errorf("internal-error: context had no deadline")
 	}
 	stateConf := &pluginsdk.StateChangeConf{
 		ContinuousTargetOccurence: 5,
@@ -323,6 +359,10 @@ func netappPoolStateRefreshFunc(ctx context.Context, client *capacitypools.Capac
 			}
 		}
 
-		return res, strconv.Itoa(res.HttpResponse.StatusCode), nil
+		statusCode := "dropped connection"
+		if res.HttpResponse != nil {
+			statusCode = strconv.Itoa(res.HttpResponse.StatusCode)
+		}
+		return res, statusCode, nil
 	}
 }

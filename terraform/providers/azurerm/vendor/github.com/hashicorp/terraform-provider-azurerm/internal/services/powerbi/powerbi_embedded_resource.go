@@ -1,3 +1,6 @@
+// Copyright (c) HashiCorp, Inc.
+// SPDX-License-Identifier: MPL-2.0
+
 package powerbi
 
 import (
@@ -61,6 +64,8 @@ func resourcePowerBIEmbedded() *pluginsdk.Resource {
 					"A4",
 					"A5",
 					"A6",
+					"A7",
+					"A8",
 				}, false),
 			},
 

@@ -14,13 +14,15 @@ import (
 	"github.com/hashicorp/go-azure-helpers/resourcemanager/commonschema"
 	"github.com/hashicorp/go-azure-helpers/resourcemanager/location"
 	"github.com/hashicorp/go-azure-helpers/resourcemanager/tags"
-	"github.com/hashicorp/go-azure-sdk/resource-manager/managedidentity/2022-01-31-preview/managedidentities"
+	"github.com/hashicorp/go-azure-sdk/resource-manager/managedidentity/2023-01-31/managedidentities"
 	"github.com/hashicorp/terraform-provider-azurerm/internal/sdk"
 	"github.com/hashicorp/terraform-provider-azurerm/internal/tf/pluginsdk"
 )
 
-var _ sdk.Resource = UserAssignedIdentityResource{}
-var _ sdk.ResourceWithUpdate = UserAssignedIdentityResource{}
+var (
+	_ sdk.Resource           = UserAssignedIdentityResource{}
+	_ sdk.ResourceWithUpdate = UserAssignedIdentityResource{}
+)
 
 type UserAssignedIdentityResource struct{}
 
@@ -41,9 +43,11 @@ type UserAssignedIdentityResourceSchema struct {
 func (r UserAssignedIdentityResource) IDValidationFunc() pluginsdk.SchemaValidateFunc {
 	return commonids.ValidateUserAssignedIdentityID
 }
+
 func (r UserAssignedIdentityResource) ResourceType() string {
 	return "azurerm_user_assigned_identity"
 }
+
 func (r UserAssignedIdentityResource) Arguments() map[string]*pluginsdk.Schema {
 	return map[string]*pluginsdk.Schema{
 		"location": commonschema.Location(),
@@ -56,6 +60,7 @@ func (r UserAssignedIdentityResource) Arguments() map[string]*pluginsdk.Schema {
 		"tags":                commonschema.Tags(),
 	}
 }
+
 func (r UserAssignedIdentityResource) Attributes() map[string]*pluginsdk.Schema {
 	return map[string]*pluginsdk.Schema{
 		"client_id": {
@@ -72,11 +77,12 @@ func (r UserAssignedIdentityResource) Attributes() map[string]*pluginsdk.Schema 
 		},
 	}
 }
+
 func (r UserAssignedIdentityResource) Create() sdk.ResourceFunc {
 	return sdk.ResourceFunc{
 		Timeout: 30 * time.Minute,
 		Func: func(ctx context.Context, metadata sdk.ResourceMetaData) error {
-			client := metadata.Client.ManagedIdentity.ManagedIdentities
+			client := metadata.Client.ManagedIdentity.V20230131.ManagedIdentities
 
 			var config UserAssignedIdentityResourceSchema
 			if err := metadata.Decode(&config); err != nil {
@@ -84,6 +90,7 @@ func (r UserAssignedIdentityResource) Create() sdk.ResourceFunc {
 			}
 
 			subscriptionId := metadata.Client.Account.SubscriptionId
+
 			id := commonids.NewUserAssignedIdentityID(subscriptionId, config.ResourceGroupName, config.Name)
 
 			existing, err := client.UserAssignedIdentitiesGet(ctx, id)
@@ -110,11 +117,12 @@ func (r UserAssignedIdentityResource) Create() sdk.ResourceFunc {
 		},
 	}
 }
+
 func (r UserAssignedIdentityResource) Read() sdk.ResourceFunc {
 	return sdk.ResourceFunc{
 		Timeout: 5 * time.Minute,
 		Func: func(ctx context.Context, metadata sdk.ResourceMetaData) error {
-			client := metadata.Client.ManagedIdentity.ManagedIdentities
+			client := metadata.Client.ManagedIdentity.V20230131.ManagedIdentities
 			schema := UserAssignedIdentityResourceSchema{}
 
 			id, err := commonids.ParseUserAssignedIdentityID(metadata.ResourceData.Id())
@@ -142,11 +150,12 @@ func (r UserAssignedIdentityResource) Read() sdk.ResourceFunc {
 		},
 	}
 }
+
 func (r UserAssignedIdentityResource) Delete() sdk.ResourceFunc {
 	return sdk.ResourceFunc{
 		Timeout: 30 * time.Minute,
 		Func: func(ctx context.Context, metadata sdk.ResourceMetaData) error {
-			client := metadata.Client.ManagedIdentity.ManagedIdentities
+			client := metadata.Client.ManagedIdentity.V20230131.ManagedIdentities
 
 			id, err := commonids.ParseUserAssignedIdentityID(metadata.ResourceData.Id())
 			if err != nil {
@@ -161,11 +170,12 @@ func (r UserAssignedIdentityResource) Delete() sdk.ResourceFunc {
 		},
 	}
 }
+
 func (r UserAssignedIdentityResource) Update() sdk.ResourceFunc {
 	return sdk.ResourceFunc{
 		Timeout: 30 * time.Minute,
 		Func: func(ctx context.Context, metadata sdk.ResourceMetaData) error {
-			client := metadata.Client.ManagedIdentity.ManagedIdentities
+			client := metadata.Client.ManagedIdentity.V20230131.ManagedIdentities
 
 			id, err := commonids.ParseUserAssignedIdentityID(metadata.ResourceData.Id())
 			if err != nil {
@@ -189,18 +199,6 @@ func (r UserAssignedIdentityResource) Update() sdk.ResourceFunc {
 			return nil
 		},
 	}
-}
-
-func (r UserAssignedIdentityResource) mapUserAssignedIdentityResourceSchemaToUserAssignedIdentityProperties(input UserAssignedIdentityResourceSchema, output *managedidentities.UserAssignedIdentityProperties) error {
-
-	return nil
-}
-
-func (r UserAssignedIdentityResource) mapUserAssignedIdentityPropertiesToUserAssignedIdentityResourceSchema(input managedidentities.UserAssignedIdentityProperties, output *UserAssignedIdentityResourceSchema) error {
-	output.ClientId = pointer.From(input.ClientId)
-	output.PrincipalId = pointer.From(input.PrincipalId)
-	output.TenantId = pointer.From(input.TenantId)
-	return nil
 }
 
 func (r UserAssignedIdentityResource) mapUserAssignedIdentityResourceSchemaToIdentity(input UserAssignedIdentityResourceSchema, output *managedidentities.Identity) error {
@@ -254,5 +252,16 @@ func (r UserAssignedIdentityResource) mapIdentityUpdateToUserAssignedIdentityRes
 		return fmt.Errorf("mapping SDK Field %q / Model %q to Schema: %+v", "UserAssignedIdentityProperties", "Properties", err)
 	}
 
+	return nil
+}
+
+func (r UserAssignedIdentityResource) mapUserAssignedIdentityResourceSchemaToUserAssignedIdentityProperties(input UserAssignedIdentityResourceSchema, output *managedidentities.UserAssignedIdentityProperties) error {
+	return nil
+}
+
+func (r UserAssignedIdentityResource) mapUserAssignedIdentityPropertiesToUserAssignedIdentityResourceSchema(input managedidentities.UserAssignedIdentityProperties, output *UserAssignedIdentityResourceSchema) error {
+	output.ClientId = pointer.From(input.ClientId)
+	output.PrincipalId = pointer.From(input.PrincipalId)
+	output.TenantId = pointer.From(input.TenantId)
 	return nil
 }

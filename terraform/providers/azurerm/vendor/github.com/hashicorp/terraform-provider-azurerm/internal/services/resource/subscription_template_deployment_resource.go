@@ -1,3 +1,6 @@
+// Copyright (c) HashiCorp, Inc.
+// SPDX-License-Identifier: MPL-2.0
+
 package resource
 
 import (
@@ -100,7 +103,7 @@ func subscriptionTemplateDeploymentResource() *pluginsdk.Resource {
 }
 
 func subscriptionTemplateDeploymentResourceCreate(d *pluginsdk.ResourceData, meta interface{}) error {
-	client := meta.(*clients.Client).Resource.DeploymentsClient
+	client := meta.(*clients.Client).Resource.LegacyDeploymentsClient
 	subscriptionId := meta.(*clients.Client).Account.SubscriptionId
 	ctx, cancel := timeouts.ForCreate(meta.(*clients.Client).StopContext, d)
 	defer cancel()
@@ -170,7 +173,7 @@ func subscriptionTemplateDeploymentResourceCreate(d *pluginsdk.ResourceData, met
 }
 
 func subscriptionTemplateDeploymentResourceUpdate(d *pluginsdk.ResourceData, meta interface{}) error {
-	client := meta.(*clients.Client).Resource.DeploymentsClient
+	client := meta.(*clients.Client).Resource.LegacyDeploymentsClient
 	ctx, cancel := timeouts.ForUpdate(meta.(*clients.Client).StopContext, d)
 	defer cancel()
 
@@ -229,6 +232,10 @@ func subscriptionTemplateDeploymentResourceUpdate(d *pluginsdk.ResourceData, met
 		deployment.Properties.TemplateLink = &resources.TemplateLink{
 			ID: utils.String(d.Get("template_spec_version_id").(string)),
 		}
+
+		if d.Get("template_spec_version_id").(string) != "" {
+			deployment.Properties.Template = nil
+		}
 	}
 
 	if d.HasChange("tags") {
@@ -256,7 +263,7 @@ func subscriptionTemplateDeploymentResourceUpdate(d *pluginsdk.ResourceData, met
 }
 
 func subscriptionTemplateDeploymentResourceRead(d *pluginsdk.ResourceData, meta interface{}) error {
-	client := meta.(*clients.Client).Resource.DeploymentsClient
+	client := meta.(*clients.Client).Resource.LegacyDeploymentsClient
 	ctx, cancel := timeouts.ForRead(meta.(*clients.Client).StopContext, d)
 	defer cancel()
 
@@ -319,7 +326,7 @@ func subscriptionTemplateDeploymentResourceRead(d *pluginsdk.ResourceData, meta 
 }
 
 func subscriptionTemplateDeploymentResourceDelete(d *pluginsdk.ResourceData, meta interface{}) error {
-	client := meta.(*clients.Client).Resource.DeploymentsClient
+	client := meta.(*clients.Client).Resource.LegacyDeploymentsClient
 	ctx, cancel := timeouts.ForDelete(meta.(*clients.Client).StopContext, d)
 	defer cancel()
 

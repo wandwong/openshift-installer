@@ -1,3 +1,6 @@
+// Copyright (c) HashiCorp, Inc.
+// SPDX-License-Identifier: MPL-2.0
+
 package desktopvirtualization
 
 import (
@@ -5,16 +8,18 @@ import (
 	"log"
 	"time"
 
+	"github.com/hashicorp/go-azure-helpers/lang/pointer"
 	"github.com/hashicorp/go-azure-helpers/lang/response"
 	"github.com/hashicorp/go-azure-helpers/resourcemanager/commonschema"
 	"github.com/hashicorp/go-azure-helpers/resourcemanager/location"
 	"github.com/hashicorp/go-azure-helpers/resourcemanager/tags"
-	"github.com/hashicorp/go-azure-sdk/resource-manager/desktopvirtualization/2022-02-10-preview/workspace"
+	"github.com/hashicorp/go-azure-sdk/resource-manager/desktopvirtualization/2024-04-03/workspace"
 	"github.com/hashicorp/terraform-provider-azurerm/helpers/azure"
 	"github.com/hashicorp/terraform-provider-azurerm/helpers/tf"
 	"github.com/hashicorp/terraform-provider-azurerm/internal/clients"
 	"github.com/hashicorp/terraform-provider-azurerm/internal/locks"
 	"github.com/hashicorp/terraform-provider-azurerm/internal/services/desktopvirtualization/migration"
+	"github.com/hashicorp/terraform-provider-azurerm/internal/services/desktopvirtualization/validate"
 	"github.com/hashicorp/terraform-provider-azurerm/internal/tf/pluginsdk"
 	"github.com/hashicorp/terraform-provider-azurerm/internal/tf/validation"
 	"github.com/hashicorp/terraform-provider-azurerm/internal/timeouts"
@@ -52,7 +57,7 @@ func resourceArmDesktopVirtualizationWorkspace() *pluginsdk.Resource {
 				Type:         pluginsdk.TypeString,
 				Required:     true,
 				ForceNew:     true,
-				ValidateFunc: validation.StringIsNotEmpty, // TODO: determine more accurate requirements in time
+				ValidateFunc: validate.WorkspaceName,
 			},
 
 			"location": commonschema.Location(),
@@ -69,6 +74,12 @@ func resourceArmDesktopVirtualizationWorkspace() *pluginsdk.Resource {
 				Type:         pluginsdk.TypeString,
 				Optional:     true,
 				ValidateFunc: validation.StringLenBetween(1, 512),
+			},
+
+			"public_network_access_enabled": {
+				Type:     pluginsdk.TypeBool,
+				Optional: true,
+				Default:  true,
 			},
 
 			"tags": commonschema.Tags(),
@@ -102,13 +113,21 @@ func resourceArmDesktopVirtualizationWorkspaceCreateUpdate(d *pluginsdk.Resource
 	t := d.Get("tags").(map[string]interface{})
 
 	payload := workspace.Workspace{
-		Location: &location,
+		Location: location,
 		Tags:     tags.Expand(t),
 		Properties: &workspace.WorkspaceProperties{
 			Description:  utils.String(d.Get("description").(string)),
 			FriendlyName: utils.String(d.Get("friendly_name").(string)),
 		},
 	}
+
+	publicNetworkAccess := workspace.PublicNetworkAccessEnabled
+
+	if !d.Get("public_network_access_enabled").(bool) {
+		publicNetworkAccess = workspace.PublicNetworkAccessDisabled
+	}
+
+	payload.Properties.PublicNetworkAccess = pointer.To(publicNetworkAccess)
 
 	if _, err := client.CreateOrUpdate(ctx, id, payload); err != nil {
 		return fmt.Errorf("creating/updating %s: %+v", id, err)
@@ -144,11 +163,16 @@ func resourceArmDesktopVirtualizationWorkspaceRead(d *pluginsdk.ResourceData, me
 	d.Set("resource_group_name", id.ResourceGroupName)
 
 	if model := resp.Model; model != nil {
-		d.Set("location", location.NormalizeNilable(model.Location))
+		d.Set("location", location.Normalize(model.Location))
 
 		if props := model.Properties; props != nil {
 			d.Set("description", props.Description)
 			d.Set("friendly_name", props.FriendlyName)
+			publicNetworkAccess := true
+			if v := props.PublicNetworkAccess; v != nil && *v != workspace.PublicNetworkAccessEnabled {
+				publicNetworkAccess = false
+			}
+			d.Set("public_network_access_enabled", publicNetworkAccess)
 		}
 
 		if err := tags.FlattenAndSet(d, model.Tags); err != nil {

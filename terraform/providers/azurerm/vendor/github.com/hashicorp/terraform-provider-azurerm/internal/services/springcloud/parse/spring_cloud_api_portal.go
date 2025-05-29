@@ -1,8 +1,12 @@
+// Copyright (c) HashiCorp, Inc.
+// SPDX-License-Identifier: MPL-2.0
+
 package parse
 
 // NOTE: this file is generated via 'go:generate' - manual changes will be overwritten
 
 import (
+	"errors"
 	"fmt"
 	"strings"
 
@@ -32,7 +36,7 @@ func (id SpringCloudAPIPortalId) String() string {
 		fmt.Sprintf("Resource Group %q", id.ResourceGroup),
 	}
 	segmentsStr := strings.Join(segments, " / ")
-	return fmt.Sprintf("%s: (%s)", "Spring Cloud A P I Portal", segmentsStr)
+	return fmt.Sprintf("%s: (%s)", "Spring CloudAPI Portal", segmentsStr)
 }
 
 func (id SpringCloudAPIPortalId) ID() string {
@@ -44,7 +48,7 @@ func (id SpringCloudAPIPortalId) ID() string {
 func SpringCloudAPIPortalID(input string) (*SpringCloudAPIPortalId, error) {
 	id, err := resourceids.ParseAzureResourceID(input)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("parsing %q as an SpringCloudAPIPortal ID: %+v", input, err)
 	}
 
 	resourceId := SpringCloudAPIPortalId{
@@ -53,11 +57,11 @@ func SpringCloudAPIPortalID(input string) (*SpringCloudAPIPortalId, error) {
 	}
 
 	if resourceId.SubscriptionId == "" {
-		return nil, fmt.Errorf("ID was missing the 'subscriptions' element")
+		return nil, errors.New("ID was missing the 'subscriptions' element")
 	}
 
 	if resourceId.ResourceGroup == "" {
-		return nil, fmt.Errorf("ID was missing the 'resourceGroups' element")
+		return nil, errors.New("ID was missing the 'resourceGroups' element")
 	}
 
 	if resourceId.SpringName, err = id.PopSegment("spring"); err != nil {
@@ -92,11 +96,11 @@ func SpringCloudAPIPortalIDInsensitively(input string) (*SpringCloudAPIPortalId,
 	}
 
 	if resourceId.SubscriptionId == "" {
-		return nil, fmt.Errorf("ID was missing the 'subscriptions' element")
+		return nil, errors.New("ID was missing the 'subscriptions' element")
 	}
 
 	if resourceId.ResourceGroup == "" {
-		return nil, fmt.Errorf("ID was missing the 'resourceGroups' element")
+		return nil, errors.New("ID was missing the 'resourceGroups' element")
 	}
 
 	// find the correct casing for the 'spring' segment

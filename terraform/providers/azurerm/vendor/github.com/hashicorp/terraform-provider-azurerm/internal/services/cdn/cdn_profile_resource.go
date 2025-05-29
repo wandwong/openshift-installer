@@ -1,3 +1,6 @@
+// Copyright (c) HashiCorp, Inc.
+// SPDX-License-Identifier: MPL-2.0
+
 package cdn
 
 import (
@@ -54,6 +57,9 @@ func resourceCdnProfile() *pluginsdk.Resource {
 
 			"resource_group_name": commonschema.ResourceGroupName(),
 
+			// NOTE: 'Standard_Verizon', 'Premium_Verizon' and 'Standard_Akamai' have been deprecated by the RP...
+			// Keeping them to avoid a breaking change since the RP will return an error if the
+			// deprecated fields are passed to the RP...
 			"sku": {
 				Type:     pluginsdk.TypeString,
 				Required: true,

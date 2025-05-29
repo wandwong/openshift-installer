@@ -1,3 +1,6 @@
+// Copyright (c) HashiCorp, Inc.
+// SPDX-License-Identifier: MPL-2.0
+
 package logic
 
 import (
@@ -176,7 +179,6 @@ func resourceLogicAppIntegrationAccountAssemblyRead(d *pluginsdk.ResourceData, m
 		if props.Metadata != nil {
 			d.Set("metadata", props.Metadata)
 		}
-
 	}
 
 	return nil

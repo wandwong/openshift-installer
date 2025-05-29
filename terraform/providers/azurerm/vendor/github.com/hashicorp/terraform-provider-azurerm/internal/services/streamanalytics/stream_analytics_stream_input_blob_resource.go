@@ -1,3 +1,6 @@
+// Copyright (c) HashiCorp, Inc.
+// SPDX-License-Identifier: MPL-2.0
+
 package streamanalytics
 
 import (
@@ -5,6 +8,7 @@ import (
 	"log"
 	"time"
 
+	"github.com/hashicorp/go-azure-helpers/lang/pointer"
 	"github.com/hashicorp/go-azure-helpers/lang/response"
 	"github.com/hashicorp/go-azure-helpers/resourcemanager/commonschema"
 	"github.com/hashicorp/go-azure-sdk/resource-manager/streamanalytics/2020-03-01/inputs"
@@ -95,6 +99,16 @@ func resourceStreamAnalyticsStreamInputBlob() *pluginsdk.Resource {
 			},
 
 			"serialization": schemaStreamAnalyticsStreamInputSerialization(),
+
+			"authentication_mode": {
+				Type:     pluginsdk.TypeString,
+				Optional: true,
+				Default:  string(inputs.AuthenticationModeConnectionString),
+				ValidateFunc: validation.StringInSlice([]string{
+					string(inputs.AuthenticationModeConnectionString),
+					string(inputs.AuthenticationModeMsi),
+				}, false),
+			},
 		},
 	}
 }
@@ -151,6 +165,7 @@ func resourceStreamAnalyticsStreamInputBlobCreateUpdate(d *pluginsdk.ResourceDat
 							AccountKey:  utils.String(storageAccountKey),
 						},
 					},
+					AuthenticationMode: pointer.To(inputs.AuthenticationMode(d.Get("authentication_mode").(string))),
 				},
 			},
 			Serialization: serialization,
@@ -238,6 +253,12 @@ func resourceStreamAnalyticsStreamInputBlobRead(d *pluginsdk.ResourceData, meta 
 					timeFormat = *v
 				}
 				d.Set("time_format", timeFormat)
+
+				authMode := ""
+				if v := streamBlobInputProps.AuthenticationMode; v != nil {
+					authMode = string(*v)
+				}
+				d.Set("authentication_mode", authMode)
 
 				if accounts := streamBlobInputProps.StorageAccounts; accounts != nil && len(*accounts) > 0 {
 					account := (*accounts)[0]

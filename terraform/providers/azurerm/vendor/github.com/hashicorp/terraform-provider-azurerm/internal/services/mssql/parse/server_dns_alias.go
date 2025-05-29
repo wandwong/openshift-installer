@@ -1,8 +1,12 @@
+// Copyright (c) HashiCorp, Inc.
+// SPDX-License-Identifier: MPL-2.0
+
 package parse
 
 // NOTE: this file is generated via 'go:generate' - manual changes will be overwritten
 
 import (
+	"errors"
 	"fmt"
 	"strings"
 
@@ -32,7 +36,7 @@ func (id ServerDNSAliasId) String() string {
 		fmt.Sprintf("Resource Group %q", id.ResourceGroup),
 	}
 	segmentsStr := strings.Join(segments, " / ")
-	return fmt.Sprintf("%s: (%s)", "Server D N S Alias", segmentsStr)
+	return fmt.Sprintf("%s: (%s)", "ServerDNS Alias", segmentsStr)
 }
 
 func (id ServerDNSAliasId) ID() string {
@@ -44,7 +48,7 @@ func (id ServerDNSAliasId) ID() string {
 func ServerDNSAliasID(input string) (*ServerDNSAliasId, error) {
 	id, err := resourceids.ParseAzureResourceID(input)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("parsing %q as an ServerDNSAlias ID: %+v", input, err)
 	}
 
 	resourceId := ServerDNSAliasId{
@@ -53,11 +57,11 @@ func ServerDNSAliasID(input string) (*ServerDNSAliasId, error) {
 	}
 
 	if resourceId.SubscriptionId == "" {
-		return nil, fmt.Errorf("ID was missing the 'subscriptions' element")
+		return nil, errors.New("ID was missing the 'subscriptions' element")
 	}
 
 	if resourceId.ResourceGroup == "" {
-		return nil, fmt.Errorf("ID was missing the 'resourceGroups' element")
+		return nil, errors.New("ID was missing the 'resourceGroups' element")
 	}
 
 	if resourceId.ServerName, err = id.PopSegment("servers"); err != nil {

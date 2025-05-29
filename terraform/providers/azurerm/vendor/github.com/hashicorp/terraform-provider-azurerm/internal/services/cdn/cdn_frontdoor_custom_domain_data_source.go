@@ -1,3 +1,6 @@
+// Copyright (c) HashiCorp, Inc.
+// SPDX-License-Identifier: MPL-2.0
+
 package cdn
 
 import (
@@ -57,7 +60,6 @@ func dataSourceCdnFrontDoorCustomDomain() *pluginsdk.Resource {
 
 				Elem: &pluginsdk.Resource{
 					Schema: map[string]*pluginsdk.Schema{
-
 						"certificate_type": {
 							Type:     pluginsdk.TypeString,
 							Computed: true,

@@ -1,6 +1,10 @@
+// Copyright (c) HashiCorp, Inc.
+// SPDX-License-Identifier: MPL-2.0
+
 package network
 
 import (
+	"github.com/hashicorp/terraform-provider-azurerm/internal/features"
 	"github.com/hashicorp/terraform-provider-azurerm/internal/sdk"
 	"github.com/hashicorp/terraform-provider-azurerm/internal/tf/pluginsdk"
 )
@@ -29,20 +33,34 @@ func (r Registration) WebsiteCategories() []string {
 }
 
 func (r Registration) DataSources() []sdk.DataSource {
-	return []sdk.DataSource{}
+	return []sdk.DataSource{
+		ManagerDataSource{},
+		ManagerNetworkGroupDataSource{},
+		ManagerConnectivityConfigurationDataSource{},
+		VPNServerConfigurationDataSource{},
+		VirtualNetworkPeeringDataSource{},
+	}
 }
 
 func (r Registration) Resources() []sdk.Resource {
 	return []sdk.Resource{
+		CustomIpPrefixResource{},
+		ManagerAdminRuleResource{},
+		ManagerAdminRuleCollectionResource{},
+		ManagerDeploymentResource{},
 		ManagerConnectivityConfigurationResource{},
 		ManagerManagementGroupConnectionResource{},
 		ManagerNetworkGroupResource{},
 		ManagerResource{},
+		ManagerIpamPoolResource{},
 		ManagerScopeConnectionResource{},
+		ManagerSecurityAdminConfigurationResource{},
 		ManagerStaticMemberResource{},
 		ManagerSubscriptionConnectionResource{},
+		ManagerVerifierWorkspaceResource{},
 		PrivateEndpointApplicationSecurityGroupAssociationResource{},
 		RouteMapResource{},
+		VirtualHubRoutingIntentResource{},
 	}
 }
 
@@ -53,7 +71,9 @@ func (r Registration) SupportedDataSources() map[string]*pluginsdk.Resource {
 		"azurerm_application_security_group":                dataSourceApplicationSecurityGroup(),
 		"azurerm_bastion_host":                              dataSourceBastionHost(),
 		"azurerm_express_route_circuit":                     dataSourceExpressRouteCircuit(),
+		"azurerm_express_route_circuit_peering":             dataSourceExpressRouteCircuitPeering(),
 		"azurerm_ip_group":                                  dataSourceIpGroup(),
+		"azurerm_ip_groups":                                 dataSourceIpGroups(),
 		"azurerm_nat_gateway":                               dataSourceNatGateway(),
 		"azurerm_network_ddos_protection_plan":              dataSourceNetworkDDoSProtectionPlan(),
 		"azurerm_network_interface":                         dataSourceNetworkInterface(),
@@ -70,6 +90,7 @@ func (r Registration) SupportedDataSources() map[string]*pluginsdk.Resource {
 		"azurerm_network_service_tags":                      dataSourceNetworkServiceTags(),
 		"azurerm_subnet":                                    dataSourceSubnet(),
 		"azurerm_virtual_hub":                               dataSourceVirtualHub(),
+		"azurerm_virtual_hub_connection":                    dataSourceVirtualHubConnection(),
 		"azurerm_virtual_hub_route_table":                   dataSourceVirtualHubRouteTable(),
 		"azurerm_virtual_network_gateway":                   dataSourceVirtualNetworkGateway(),
 		"azurerm_virtual_network_gateway_connection":        dataSourceVirtualNetworkGatewayConnection(),
@@ -83,7 +104,7 @@ func (r Registration) SupportedDataSources() map[string]*pluginsdk.Resource {
 
 // SupportedResources returns the supported Resources supported by this Service
 func (r Registration) SupportedResources() map[string]*pluginsdk.Resource {
-	return map[string]*pluginsdk.Resource{
+	resources := map[string]*pluginsdk.Resource{
 		"azurerm_application_gateway":                      resourceApplicationGateway(),
 		"azurerm_application_security_group":               resourceApplicationSecurityGroup(),
 		"azurerm_bastion_host":                             resourceBastionHost(),
@@ -93,6 +114,7 @@ func (r Registration) SupportedResources() map[string]*pluginsdk.Resource {
 		"azurerm_express_route_circuit":                    resourceExpressRouteCircuit(),
 		"azurerm_express_route_connection":                 resourceExpressRouteConnection(),
 		"azurerm_express_route_gateway":                    resourceExpressRouteGateway(),
+		"azurerm_express_route_port_authorization":         resourceExpressRoutePortAuthorization(),
 		"azurerm_express_route_port":                       resourceArmExpressRoutePort(),
 		"azurerm_ip_group":                                 resourceIpGroup(),
 		"azurerm_ip_group_cidr":                            resourceIpGroupCidr(),
@@ -110,7 +132,6 @@ func (r Registration) SupportedResources() map[string]*pluginsdk.Resource {
 		"azurerm_network_interface_nat_rule_association":                                 resourceNetworkInterfaceNatRuleAssociation(),
 		"azurerm_network_interface_security_group_association":                           resourceNetworkInterfaceSecurityGroupAssociation(),
 
-		"azurerm_network_packet_capture":                    resourceNetworkPacketCapture(),
 		"azurerm_network_profile":                           resourceNetworkProfile(),
 		"azurerm_point_to_site_vpn_gateway":                 resourcePointToSiteVPNGateway(),
 		"azurerm_private_endpoint":                          resourcePrivateEndpoint(),
@@ -155,4 +176,10 @@ func (r Registration) SupportedResources() map[string]*pluginsdk.Resource {
 		"azurerm_vpn_site":                                  resourceVpnSite(),
 		"azurerm_web_application_firewall_policy":           resourceWebApplicationFirewallPolicy(),
 	}
+
+	if !features.FivePointOh() {
+		resources["azurerm_network_packet_capture"] = resourceNetworkPacketCapture()
+	}
+
+	return resources
 }

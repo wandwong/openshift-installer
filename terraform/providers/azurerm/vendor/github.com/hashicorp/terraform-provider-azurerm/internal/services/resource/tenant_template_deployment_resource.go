@@ -1,3 +1,6 @@
+// Copyright (c) HashiCorp, Inc.
+// SPDX-License-Identifier: MPL-2.0
+
 package resource
 
 import (
@@ -100,7 +103,7 @@ func tenantTemplateDeploymentResource() *pluginsdk.Resource {
 }
 
 func tenantTemplateDeploymentResourceCreate(d *pluginsdk.ResourceData, meta interface{}) error {
-	client := meta.(*clients.Client).Resource.DeploymentsClient
+	client := meta.(*clients.Client).Resource.LegacyDeploymentsClient
 	ctx, cancel := timeouts.ForCreate(meta.(*clients.Client).StopContext, d)
 	defer cancel()
 
@@ -169,7 +172,7 @@ func tenantTemplateDeploymentResourceCreate(d *pluginsdk.ResourceData, meta inte
 }
 
 func tenantTemplateDeploymentResourceUpdate(d *pluginsdk.ResourceData, meta interface{}) error {
-	client := meta.(*clients.Client).Resource.DeploymentsClient
+	client := meta.(*clients.Client).Resource.LegacyDeploymentsClient
 	ctx, cancel := timeouts.ForUpdate(meta.(*clients.Client).StopContext, d)
 	defer cancel()
 
@@ -230,6 +233,10 @@ func tenantTemplateDeploymentResourceUpdate(d *pluginsdk.ResourceData, meta inte
 		deployment.Properties.TemplateLink = &resources.TemplateLink{
 			ID: utils.String(d.Get("template_spec_version_id").(string)),
 		}
+
+		if d.Get("template_spec_version_id").(string) != "" {
+			deployment.Properties.Template = nil
+		}
 	}
 
 	if d.HasChange("tags") {
@@ -257,7 +264,7 @@ func tenantTemplateDeploymentResourceUpdate(d *pluginsdk.ResourceData, meta inte
 }
 
 func tenantTemplateDeploymentResourceRead(d *pluginsdk.ResourceData, meta interface{}) error {
-	client := meta.(*clients.Client).Resource.DeploymentsClient
+	client := meta.(*clients.Client).Resource.LegacyDeploymentsClient
 	ctx, cancel := timeouts.ForRead(meta.(*clients.Client).StopContext, d)
 	defer cancel()
 
@@ -320,7 +327,7 @@ func tenantTemplateDeploymentResourceRead(d *pluginsdk.ResourceData, meta interf
 }
 
 func tenantTemplateDeploymentResourceDelete(d *pluginsdk.ResourceData, meta interface{}) error {
-	client := meta.(*clients.Client).Resource.DeploymentsClient
+	client := meta.(*clients.Client).Resource.LegacyDeploymentsClient
 	ctx, cancel := timeouts.ForDelete(meta.(*clients.Client).StopContext, d)
 	defer cancel()
 

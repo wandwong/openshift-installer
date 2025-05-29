@@ -1,3 +1,6 @@
+// Copyright (c) HashiCorp, Inc.
+// SPDX-License-Identifier: MPL-2.0
+
 package containerapps
 
 import (
@@ -12,9 +15,8 @@ import (
 	"github.com/hashicorp/go-azure-helpers/resourcemanager/identity"
 	"github.com/hashicorp/go-azure-helpers/resourcemanager/location"
 	"github.com/hashicorp/go-azure-helpers/resourcemanager/tags"
-	"github.com/hashicorp/go-azure-sdk/resource-manager/containerapps/2022-03-01/containerapps"
-	"github.com/hashicorp/go-azure-sdk/resource-manager/containerapps/2022-03-01/managedenvironments"
-	"github.com/hashicorp/terraform-plugin-sdk/v2/helper/schema"
+	"github.com/hashicorp/go-azure-sdk/resource-manager/containerapps/2025-01-01/containerapps"
+	"github.com/hashicorp/go-azure-sdk/resource-manager/containerapps/2025-01-01/managedenvironments"
 	"github.com/hashicorp/terraform-provider-azurerm/internal/sdk"
 	"github.com/hashicorp/terraform-provider-azurerm/internal/services/containerapps/helpers"
 	"github.com/hashicorp/terraform-provider-azurerm/internal/services/containerapps/validate"
@@ -37,9 +39,10 @@ type ContainerAppModel struct {
 	Dapr         []helpers.Dapr              `tfschema:"dapr"`
 	Template     []helpers.ContainerTemplate `tfschema:"template"`
 
-	Identity []identity.ModelSystemAssignedUserAssigned `tfschema:"identity"`
-
-	Tags map[string]interface{} `tfschema:"tags"`
+	Identity             []identity.ModelSystemAssignedUserAssigned `tfschema:"identity"`
+	WorkloadProfileName  string                                     `tfschema:"workload_profile_name"`
+	MaxInactiveRevisions int64                                      `tfschema:"max_inactive_revisions"`
+	Tags                 map[string]interface{}                     `tfschema:"tags"`
 
 	OutboundIpAddresses        []string `tfschema:"outbound_ip_addresses"`
 	LatestRevisionName         string   `tfschema:"latest_revision_name"`
@@ -102,7 +105,19 @@ func (r ContainerAppResource) Arguments() map[string]*pluginsdk.Schema {
 
 		"dapr": helpers.ContainerDaprSchema(),
 
-		"identity": commonschema.SystemOrUserAssignedIdentityOptional(),
+		"identity": commonschema.SystemAssignedUserAssignedIdentityOptional(),
+
+		"workload_profile_name": {
+			Type:         pluginsdk.TypeString,
+			Optional:     true,
+			ValidateFunc: validation.StringIsNotEmpty,
+		},
+
+		"max_inactive_revisions": {
+			Type:         pluginsdk.TypeInt,
+			Optional:     true,
+			ValidateFunc: validation.IntBetween(0, 100),
+		},
 
 		"tags": commonschema.Tags(),
 	}
@@ -177,17 +192,29 @@ func (r ContainerAppResource) Create() sdk.ResourceFunc {
 				return fmt.Errorf("reading %s for %s: %+v", *envId, id, err)
 			}
 
+			registries, err := helpers.ExpandContainerAppRegistries(app.Registries)
+			if err != nil {
+				return fmt.Errorf("invalid registry config for %s: %+v", id, err)
+			}
+
+			secrets, err := helpers.ExpandContainerSecrets(app.Secrets)
+			if err != nil {
+				return fmt.Errorf("invalid secrets config for %s: %+v", id, err)
+			}
+
 			containerApp := containerapps.ContainerApp{
 				Location: location.Normalize(env.Model.Location),
 				Properties: &containerapps.ContainerAppProperties{
 					Configuration: &containerapps.Configuration{
-						Ingress:    helpers.ExpandContainerAppIngress(app.Ingress, id.ContainerAppName),
-						Dapr:       helpers.ExpandContainerAppDapr(app.Dapr),
-						Secrets:    helpers.ExpandContainerSecrets(app.Secrets),
-						Registries: helpers.ExpandContainerAppRegistries(app.Registries),
+						Ingress:              helpers.ExpandContainerAppIngress(app.Ingress, id.ContainerAppName),
+						Dapr:                 helpers.ExpandContainerAppDapr(app.Dapr),
+						Secrets:              secrets,
+						Registries:           registries,
+						MaxInactiveRevisions: pointer.FromInt64(app.MaxInactiveRevisions),
 					},
 					ManagedEnvironmentId: pointer.To(app.ManagedEnvironmentId),
 					Template:             helpers.ExpandContainerAppTemplate(app.Template, metadata),
+					WorkloadProfileName:  pointer.To(app.WorkloadProfileName),
 				},
 				Tags: tags.Expand(app.Tags),
 			}
@@ -238,11 +265,13 @@ func (r ContainerAppResource) Read() sdk.ResourceFunc {
 			if model := existing.Model; model != nil {
 				state.Location = location.Normalize(model.Location)
 				state.Tags = tags.Flatten(model.Tags)
-				ident, err := identity.FlattenSystemAndUserAssignedMapToModel(pointer.To(identity.SystemAndUserAssignedMap(*model.Identity)))
-				if err != nil {
-					return err
+				if model.Identity != nil {
+					ident, err := identity.FlattenSystemAndUserAssignedMapToModel(pointer.To(identity.SystemAndUserAssignedMap(*model.Identity)))
+					if err != nil {
+						return err
+					}
+					state.Identity = pointer.From(ident)
 				}
-				state.Identity = pointer.From(ident)
 
 				if props := model.Properties; props != nil {
 					envId, err := managedenvironments.ParseManagedEnvironmentIDInsensitively(pointer.From(props.ManagedEnvironmentId))
@@ -258,11 +287,13 @@ func (r ContainerAppResource) Read() sdk.ResourceFunc {
 						state.Ingress = helpers.FlattenContainerAppIngress(config.Ingress, id.ContainerAppName)
 						state.Registries = helpers.FlattenContainerAppRegistries(config.Registries)
 						state.Dapr = helpers.FlattenContainerAppDapr(config.Dapr)
+						state.MaxInactiveRevisions = pointer.ToInt64(config.MaxInactiveRevisions)
 					}
 					state.LatestRevisionName = pointer.From(props.LatestRevisionName)
 					state.LatestRevisionFqdn = pointer.From(props.LatestRevisionFqdn)
 					state.CustomDomainVerificationId = pointer.From(props.CustomDomainVerificationId)
 					state.OutboundIpAddresses = pointer.From(props.OutboundIPAddresses)
+					state.WorkloadProfileName = pointer.From(props.WorkloadProfileName)
 				}
 			}
 
@@ -332,7 +363,7 @@ func (r ContainerAppResource) Update() sdk.ResourceFunc {
 			// Delta-updates need the secrets back from the list API, or we'll end up removing them or erroring out.
 			secretsResp, err := client.ListSecrets(ctx, *id)
 			if err != nil || secretsResp.Model == nil {
-				if secretsResp.HttpResponse == nil || secretsResp.HttpResponse.StatusCode != http.StatusNoContent {
+				if !response.WasStatusCode(secretsResp.HttpResponse, http.StatusNoContent) {
 					return fmt.Errorf("retrieving secrets for update for %s: %+v", *id, err)
 				}
 			}
@@ -347,13 +378,18 @@ func (r ContainerAppResource) Update() sdk.ResourceFunc {
 			}
 
 			if metadata.ResourceData.HasChange("registry") {
-				model.Properties.Configuration.Registries = helpers.ExpandContainerAppRegistries(state.Registries)
+				model.Properties.Configuration.Registries, err = helpers.ExpandContainerAppRegistries(state.Registries)
+				if err != nil {
+					return fmt.Errorf("invalid registry config for %s: %+v", id, err)
+				}
+			}
 
+			if metadata.ResourceData.HasChange("max_inactive_revisions") {
+				model.Properties.Configuration.MaxInactiveRevisions = pointer.FromInt64(state.MaxInactiveRevisions)
 			}
 
 			if metadata.ResourceData.HasChange("dapr") {
 				model.Properties.Configuration.Dapr = helpers.ExpandContainerAppDapr(state.Dapr)
-
 			}
 
 			if metadata.ResourceData.HasChange("template") {
@@ -369,7 +405,10 @@ func (r ContainerAppResource) Update() sdk.ResourceFunc {
 			}
 
 			if metadata.ResourceData.HasChange("secret") {
-				model.Properties.Configuration.Secrets = helpers.ExpandContainerSecrets(state.Secrets)
+				model.Properties.Configuration.Secrets, err = helpers.ExpandContainerSecrets(state.Secrets)
+				if err != nil {
+					return fmt.Errorf("invalid secrets config for %s: %+v", id, err)
+				}
 			}
 
 			if metadata.ResourceData.HasChange("identity") {
@@ -378,7 +417,10 @@ func (r ContainerAppResource) Update() sdk.ResourceFunc {
 					return err
 				}
 				model.Identity = pointer.To(identity.LegacySystemAndUserAssignedMap(*ident))
+			}
 
+			if metadata.ResourceData.HasChange("workload_profile_name") {
+				model.Properties.WorkloadProfileName = pointer.To(state.WorkloadProfileName)
 			}
 
 			if metadata.ResourceData.HasChange("tags") {
@@ -399,28 +441,30 @@ func (r ContainerAppResource) Update() sdk.ResourceFunc {
 func (r ContainerAppResource) CustomizeDiff() sdk.ResourceFunc {
 	return sdk.ResourceFunc{
 		Func: func(ctx context.Context, metadata sdk.ResourceMetaData) error {
-			if metadata.ResourceDiff != nil && metadata.ResourceDiff.HasChange("secret") {
-				stateSecretsRaw, configSecretsRaw := metadata.ResourceDiff.GetChange("secret")
-				stateSecrets := stateSecretsRaw.(*schema.Set).List()
-				configSecrets := configSecretsRaw.(*schema.Set).List()
-				// Check there's not less
-				if len(configSecrets) < len(stateSecrets) {
-					return fmt.Errorf("cannot remove secrets from Container Apps at this time due to a limitation in the Container Apps Service. Please see `https://github.com/microsoft/azure-container-apps/issues/395` for more details")
-				}
-				// Check secrets names in state are all present in config, the values don't matter
-				if len(stateSecrets) > 0 {
-					for _, s := range stateSecrets {
-						found := false
-						for _, c := range configSecrets {
-							if s.(map[string]interface{})["name"] == c.(map[string]interface{})["name"] {
-								found = true
-								break
-							}
-						}
-						if !found {
-							return fmt.Errorf("previously configured secret %q was removed. Removing secrets is not supported by the Container Apps Service at this time, see `https://github.com/microsoft/azure-container-apps/issues/395` for more details", s.(map[string]interface{})["name"])
-						}
+			if metadata.ResourceDiff == nil {
+				return nil
+			}
+			var app ContainerAppModel
+			if err := metadata.DecodeDiff(&app); err != nil {
+				return err
+			}
+			// Ingress traffic weight validations
+			if len(app.Ingress) != 0 {
+				ingress := app.Ingress[0]
+
+				for i, tw := range ingress.TrafficWeights {
+					if !tw.LatestRevision && tw.RevisionSuffix == "" {
+						return fmt.Errorf("`either ingress.0.traffic_weight.%[1]d.revision_suffix` or `ingress.0.traffic_weight.%[1]d.latest_revision` should be specified", i)
 					}
+				}
+			}
+
+			for _, s := range app.Secrets {
+				if s.KeyVaultSecretId != "" && s.Identity == "" {
+					return fmt.Errorf("secret %s must supply identity for key vault secret id", s.Name)
+				}
+				if s.KeyVaultSecretId == "" && s.Identity != "" {
+					return fmt.Errorf("secret %s must supply key vault secret id when specifying identity", s.Name)
 				}
 			}
 			return nil

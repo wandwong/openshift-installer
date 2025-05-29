@@ -1,3 +1,6 @@
+// Copyright (c) HashiCorp, Inc.
+// SPDX-License-Identifier: MPL-2.0
+
 package azuresdkhacks
 
 import (
@@ -24,7 +27,7 @@ func CreateSecurityCenterContact(ctx context.Context, client *security.ContactsC
 			}},
 		},
 	}); err != nil {
-		return result, validation.NewError("security.ContactsClient", "Create", err.Error())
+		return result, validation.NewError("security.ContactsClient", "Create", "%+v", err.Error())
 	}
 
 	req, err := client.CreatePreparer(ctx, securityContactName, securityContact)

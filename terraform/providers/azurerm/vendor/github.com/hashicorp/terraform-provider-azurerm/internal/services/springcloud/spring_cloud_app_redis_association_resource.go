@@ -1,3 +1,6 @@
+// Copyright (c) HashiCorp, Inc.
+// SPDX-License-Identifier: MPL-2.0
+
 package springcloud
 
 import (
@@ -6,9 +9,10 @@ import (
 	"strings"
 	"time"
 
-	"github.com/hashicorp/go-azure-sdk/resource-manager/redis/2021-06-01/redis"
+	"github.com/hashicorp/go-azure-sdk/resource-manager/redis/2024-03-01/redis"
 	"github.com/hashicorp/terraform-provider-azurerm/helpers/tf"
 	"github.com/hashicorp/terraform-provider-azurerm/internal/clients"
+	"github.com/hashicorp/terraform-provider-azurerm/internal/features"
 	"github.com/hashicorp/terraform-provider-azurerm/internal/services/springcloud/migration"
 	"github.com/hashicorp/terraform-provider-azurerm/internal/services/springcloud/parse"
 	"github.com/hashicorp/terraform-provider-azurerm/internal/services/springcloud/validate"
@@ -16,13 +20,15 @@ import (
 	"github.com/hashicorp/terraform-provider-azurerm/internal/tf/validation"
 	"github.com/hashicorp/terraform-provider-azurerm/internal/timeouts"
 	"github.com/hashicorp/terraform-provider-azurerm/utils"
-	"github.com/tombuildsstuff/kermit/sdk/appplatform/2022-11-01-preview/appplatform"
+	"github.com/jackofallops/kermit/sdk/appplatform/2023-05-01-preview/appplatform"
 )
 
 const springCloudAppRedisAssociationKeySSL = "useSsl"
 
 func resourceSpringCloudAppRedisAssociation() *pluginsdk.Resource {
 	return &pluginsdk.Resource{
+		DeprecationMessage: features.DeprecatedInFivePointOh("Azure Spring Apps is now deprecated and will be retired on 2028-05-31 - as such the `azurerm_spring_cloud_app_redis_association` resource is deprecated and will be removed in a future major version of the AzureRM Provider. See https://aka.ms/asaretirement for more information."),
+
 		Create: resourceSpringCloudAppRedisAssociationCreateUpdate,
 		Read:   resourceSpringCloudAppRedisAssociationRead,
 		Update: resourceSpringCloudAppRedisAssociationCreateUpdate,
@@ -107,8 +113,8 @@ func resourceSpringCloudAppRedisAssociationCreateUpdate(d *pluginsdk.ResourceDat
 
 	bindingResource := appplatform.BindingResource{
 		Properties: &appplatform.BindingResourceProperties{
-			BindingParameters: map[string]interface{}{
-				springCloudAppRedisAssociationKeySSL: d.Get("ssl_enabled").(bool),
+			BindingParameters: map[string]*string{
+				springCloudAppRedisAssociationKeySSL: utils.String(fmt.Sprintf("%t", d.Get("ssl_enabled").(bool))),
 			},
 			Key:        utils.String(d.Get("redis_access_key").(string)),
 			ResourceID: utils.String(d.Get("redis_cache_id").(string)),
@@ -153,8 +159,8 @@ func resourceSpringCloudAppRedisAssociationRead(d *pluginsdk.ResourceData, meta 
 		d.Set("redis_cache_id", props.ResourceID)
 
 		enableSSL := "false"
-		if v, ok := props.BindingParameters[springCloudAppRedisAssociationKeySSL]; ok {
-			enableSSL = v.(string)
+		if v, ok := props.BindingParameters[springCloudAppRedisAssociationKeySSL]; ok && v != nil {
+			enableSSL = *v
 		}
 		d.Set("ssl_enabled", strings.EqualFold(enableSSL, "true"))
 	}

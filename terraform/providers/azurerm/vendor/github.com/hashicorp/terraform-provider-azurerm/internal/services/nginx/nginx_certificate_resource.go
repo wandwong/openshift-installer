@@ -1,3 +1,6 @@
+// Copyright (c) HashiCorp, Inc.
+// SPDX-License-Identifier: MPL-2.0
+
 package nginx
 
 import (
@@ -7,8 +10,8 @@ import (
 
 	"github.com/hashicorp/go-azure-helpers/lang/pointer"
 	"github.com/hashicorp/go-azure-helpers/lang/response"
-	"github.com/hashicorp/go-azure-sdk/resource-manager/nginx/2022-08-01/nginxcertificate"
-	"github.com/hashicorp/go-azure-sdk/resource-manager/nginx/2022-08-01/nginxdeployment"
+	"github.com/hashicorp/go-azure-sdk/resource-manager/nginx/2024-11-01-preview/nginxcertificate"
+	"github.com/hashicorp/go-azure-sdk/resource-manager/nginx/2024-11-01-preview/nginxdeployment"
 	"github.com/hashicorp/terraform-provider-azurerm/internal/sdk"
 	keyvaultValidate "github.com/hashicorp/terraform-provider-azurerm/internal/services/keyvault/validate"
 	"github.com/hashicorp/terraform-provider-azurerm/internal/tf/pluginsdk"
@@ -25,7 +28,7 @@ type CertificateModel struct {
 
 type CertificateResource struct{}
 
-var _ sdk.Resource = (*CertificateResource)(nil)
+var _ sdk.ResourceWithUpdate = (*CertificateResource)(nil)
 
 func (m CertificateResource) Arguments() map[string]*pluginsdk.Schema {
 	return map[string]*pluginsdk.Schema{
@@ -46,22 +49,19 @@ func (m CertificateResource) Arguments() map[string]*pluginsdk.Schema {
 		"key_virtual_path": {
 			Type:         pluginsdk.TypeString,
 			Required:     true,
-			ForceNew:     true,
 			ValidateFunc: validation.StringIsNotEmpty,
 		},
 
 		"certificate_virtual_path": {
 			Type:         pluginsdk.TypeString,
 			Required:     true,
-			ForceNew:     true,
 			ValidateFunc: validation.StringIsNotEmpty,
 		},
 
 		"key_vault_secret_id": {
 			Type:         pluginsdk.TypeString,
 			Required:     true,
-			ForceNew:     true,
-			ValidateFunc: keyvaultValidate.NestedItemId,
+			ValidateFunc: keyvaultValidate.NestedItemIdWithOptionalVersion,
 		},
 	}
 }
@@ -103,9 +103,9 @@ func (m CertificateResource) Create() sdk.ResourceFunc {
 
 			req := nginxcertificate.NginxCertificate{
 				Properties: &nginxcertificate.NginxCertificateProperties{
-					CertificateVirtualPath: pointer.FromString(model.CertificateVirtualPath),
-					KeyVaultSecretId:       pointer.FromString(model.KeyVaultSecretId),
-					KeyVirtualPath:         pointer.FromString(model.KeyVirtualPath),
+					CertificateVirtualPath: pointer.To(model.CertificateVirtualPath),
+					KeyVaultSecretId:       pointer.To(model.KeyVaultSecretId),
+					KeyVirtualPath:         pointer.To(model.KeyVirtualPath),
 				},
 			}
 
@@ -115,6 +115,53 @@ func (m CertificateResource) Create() sdk.ResourceFunc {
 			}
 
 			meta.SetID(id)
+			return nil
+		},
+	}
+}
+
+func (m CertificateResource) Update() sdk.ResourceFunc {
+	return sdk.ResourceFunc{
+		Timeout: 30 * time.Minute,
+		Func: func(ctx context.Context, meta sdk.ResourceMetaData) error {
+			client := meta.Client.Nginx.NginxCertificate
+			id, err := nginxcertificate.ParseCertificateID(meta.ResourceData.Id())
+			if err != nil {
+				return err
+			}
+
+			var model CertificateModel
+			if err = meta.Decode(&model); err != nil {
+				return fmt.Errorf("decoding err: %+v", err)
+			}
+
+			// retrieve from GET
+			existing, err := client.CertificatesGet(ctx, *id)
+			if err != nil {
+				return fmt.Errorf("retrieving exists when updating: +%v", *id)
+			}
+			if existing.Model == nil && existing.Model.Properties == nil {
+				return fmt.Errorf("retrieving as nil when updating for %v", *id)
+			}
+
+			// have to pass all existing properties to update
+			upd := existing.Model
+			if meta.ResourceData.HasChange("key_virtual_path") {
+				upd.Properties.KeyVirtualPath = pointer.To(model.KeyVirtualPath)
+			}
+
+			if meta.ResourceData.HasChange("certificate_virtual_path") {
+				upd.Properties.CertificateVirtualPath = pointer.To(model.CertificateVirtualPath)
+			}
+
+			if meta.ResourceData.HasChange("key_vault_secret_id") {
+				upd.Properties.KeyVaultSecretId = pointer.To(model.KeyVaultSecretId)
+			}
+
+			err = client.CertificatesCreateOrUpdateThenPoll(ctx, *id, *upd)
+			if err != nil {
+				return fmt.Errorf("updating %s: %v", id, err)
+			}
 			return nil
 		},
 	}
@@ -132,6 +179,9 @@ func (m CertificateResource) Read() sdk.ResourceFunc {
 			client := meta.Client.Nginx.NginxCertificate
 			result, err := client.CertificatesGet(ctx, *id)
 			if err != nil {
+				if response.WasNotFound(result.HttpResponse) {
+					return meta.MarkAsGone(id)
+				}
 				return err
 			}
 
@@ -162,14 +212,11 @@ func (m CertificateResource) Delete() sdk.ResourceFunc {
 
 			meta.Logger.Infof("deleting %s", id)
 			client := meta.Client.Nginx.NginxCertificate
-			future, err := client.CertificatesDelete(ctx, *id)
-			if err != nil {
+
+			if err := client.CertificatesDeleteThenPoll(ctx, *id); err != nil {
 				return fmt.Errorf("deleting %s: %v", id, err)
 			}
 
-			if err := future.Poller.PollUntilDone(); err != nil {
-				return fmt.Errorf("waiting for delete of %s: %v", id, err)
-			}
 			return nil
 		},
 	}

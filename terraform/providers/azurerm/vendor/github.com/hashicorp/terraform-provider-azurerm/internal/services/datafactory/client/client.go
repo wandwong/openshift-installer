@@ -1,31 +1,66 @@
+// Copyright (c) HashiCorp, Inc.
+// SPDX-License-Identifier: MPL-2.0
+
 package client
 
 import (
-	"github.com/Azure/azure-sdk-for-go/services/datafactory/mgmt/2018-06-01/datafactory" // nolint: staticcheck
+	"fmt"
+
+	"github.com/hashicorp/go-azure-sdk/resource-manager/datafactory/2018-06-01/credentials"
+	"github.com/hashicorp/go-azure-sdk/resource-manager/datafactory/2018-06-01/factories"
+	"github.com/hashicorp/go-azure-sdk/resource-manager/datafactory/2018-06-01/managedprivateendpoints"
+	"github.com/hashicorp/go-azure-sdk/resource-manager/datafactory/2018-06-01/managedvirtualnetworks"
+	"github.com/hashicorp/go-azure-sdk/resource-manager/datafactory/2018-06-01/pipelines"
 	"github.com/hashicorp/terraform-provider-azurerm/internal/common"
+	"github.com/jackofallops/kermit/sdk/datafactory/2018-06-01/datafactory" // nolint: staticcheck
 )
 
 type Client struct {
-	DataFlowClient                *datafactory.DataFlowsClient
-	DatasetClient                 *datafactory.DatasetsClient
-	FactoriesClient               *datafactory.FactoriesClient
-	IntegrationRuntimesClient     *datafactory.IntegrationRuntimesClient
-	LinkedServiceClient           *datafactory.LinkedServicesClient
-	ManagedPrivateEndpointsClient *datafactory.ManagedPrivateEndpointsClient
-	ManagedVirtualNetworksClient  *datafactory.ManagedVirtualNetworksClient
-	PipelinesClient               *datafactory.PipelinesClient
-	TriggersClient                *datafactory.TriggersClient
+	Factories               *factories.FactoriesClient
+	Credentials             *credentials.CredentialsClient
+	ManagedPrivateEndpoints *managedprivateendpoints.ManagedPrivateEndpointsClient
+	ManagedVirtualNetworks  *managedvirtualnetworks.ManagedVirtualNetworksClient
+	PipelinesClient         *pipelines.PipelinesClient
+
+	// TODO: convert to using hashicorp/go-azure-sdk
+	DataFlowClient            *datafactory.DataFlowsClient
+	DatasetClient             *datafactory.DatasetsClient
+	IntegrationRuntimesClient *datafactory.IntegrationRuntimesClient
+	LinkedServiceClient       *datafactory.LinkedServicesClient
+	TriggersClient            *datafactory.TriggersClient
 }
 
-func NewClient(o *common.ClientOptions) *Client {
+func NewClient(o *common.ClientOptions) (*Client, error) {
+	factoriesClient, err := factories.NewFactoriesClientWithBaseURI(o.Environment.ResourceManager)
+	if err != nil {
+		return nil, fmt.Errorf("building Factories client: %+v", err)
+	}
+	o.Configure(factoriesClient.Client, o.Authorizers.ResourceManager)
+
+	credentialsClient, err := credentials.NewCredentialsClientWithBaseURI(o.Environment.ResourceManager)
+	if err != nil {
+		return nil, fmt.Errorf("building Factories client: %+v", err)
+	}
+	o.Configure(credentialsClient.Client, o.Authorizers.ResourceManager)
+
+	managedPrivateEndpointsClient, err := managedprivateendpoints.NewManagedPrivateEndpointsClientWithBaseURI(o.Environment.ResourceManager)
+	if err != nil {
+		return nil, fmt.Errorf("building ManagedPrivateEndpoints client: %+v", err)
+	}
+	o.Configure(managedPrivateEndpointsClient.Client, o.Authorizers.ResourceManager)
+
+	managedVirtualNetworksClient, err := managedvirtualnetworks.NewManagedVirtualNetworksClientWithBaseURI(o.Environment.ResourceManager)
+	if err != nil {
+		return nil, fmt.Errorf("building ManagedVirtualNetworks client: %+v", err)
+	}
+	o.Configure(managedVirtualNetworksClient.Client, o.Authorizers.ResourceManager)
+
+	// TODO: port the below operations to use `hashicorp/go-azure-sdk` in time
 	dataFlowClient := datafactory.NewDataFlowsClientWithBaseURI(o.ResourceManagerEndpoint, o.SubscriptionId)
 	o.ConfigureClient(&dataFlowClient.Client, o.ResourceManagerAuthorizer)
 
 	DatasetClient := datafactory.NewDatasetsClientWithBaseURI(o.ResourceManagerEndpoint, o.SubscriptionId)
 	o.ConfigureClient(&DatasetClient.Client, o.ResourceManagerAuthorizer)
-
-	FactoriesClient := datafactory.NewFactoriesClientWithBaseURI(o.ResourceManagerEndpoint, o.SubscriptionId)
-	o.ConfigureClient(&FactoriesClient.Client, o.ResourceManagerAuthorizer)
 
 	IntegrationRuntimesClient := datafactory.NewIntegrationRuntimesClientWithBaseURI(o.ResourceManagerEndpoint, o.SubscriptionId)
 	o.ConfigureClient(&IntegrationRuntimesClient.Client, o.ResourceManagerAuthorizer)
@@ -33,27 +68,27 @@ func NewClient(o *common.ClientOptions) *Client {
 	LinkedServiceClient := datafactory.NewLinkedServicesClientWithBaseURI(o.ResourceManagerEndpoint, o.SubscriptionId)
 	o.ConfigureClient(&LinkedServiceClient.Client, o.ResourceManagerAuthorizer)
 
-	ManagedPrivateEndpointsClient := datafactory.NewManagedPrivateEndpointsClientWithBaseURI(o.ResourceManagerEndpoint, o.SubscriptionId)
-	o.ConfigureClient(&ManagedPrivateEndpointsClient.Client, o.ResourceManagerAuthorizer)
-
-	ManagedVirtualNetworksClient := datafactory.NewManagedVirtualNetworksClientWithBaseURI(o.ResourceManagerEndpoint, o.SubscriptionId)
-	o.ConfigureClient(&ManagedVirtualNetworksClient.Client, o.ResourceManagerAuthorizer)
-
-	PipelinesClient := datafactory.NewPipelinesClientWithBaseURI(o.ResourceManagerEndpoint, o.SubscriptionId)
-	o.ConfigureClient(&PipelinesClient.Client, o.ResourceManagerAuthorizer)
+	PipelinesClient, err := pipelines.NewPipelinesClientWithBaseURI(o.Environment.ResourceManager)
+	if err != nil {
+		return nil, fmt.Errorf("building Pipelines client: %+v", err)
+	}
+	o.Configure(PipelinesClient.Client, o.Authorizers.ResourceManager)
 
 	TriggersClient := datafactory.NewTriggersClientWithBaseURI(o.ResourceManagerEndpoint, o.SubscriptionId)
 	o.ConfigureClient(&TriggersClient.Client, o.ResourceManagerAuthorizer)
 
 	return &Client{
-		DataFlowClient:                &dataFlowClient,
-		DatasetClient:                 &DatasetClient,
-		FactoriesClient:               &FactoriesClient,
-		IntegrationRuntimesClient:     &IntegrationRuntimesClient,
-		LinkedServiceClient:           &LinkedServiceClient,
-		ManagedPrivateEndpointsClient: &ManagedPrivateEndpointsClient,
-		ManagedVirtualNetworksClient:  &ManagedVirtualNetworksClient,
-		PipelinesClient:               &PipelinesClient,
-		TriggersClient:                &TriggersClient,
-	}
+		Factories:               factoriesClient,
+		Credentials:             credentialsClient,
+		ManagedPrivateEndpoints: managedPrivateEndpointsClient,
+		ManagedVirtualNetworks:  managedVirtualNetworksClient,
+		PipelinesClient:         PipelinesClient,
+
+		// TODO: port to `hashicorp/go-azure-sdk`
+		DataFlowClient:            &dataFlowClient,
+		DatasetClient:             &DatasetClient,
+		IntegrationRuntimesClient: &IntegrationRuntimesClient,
+		LinkedServiceClient:       &LinkedServiceClient,
+		TriggersClient:            &TriggersClient,
+	}, nil
 }

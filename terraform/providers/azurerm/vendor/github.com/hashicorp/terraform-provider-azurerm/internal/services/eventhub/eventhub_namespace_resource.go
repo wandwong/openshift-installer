@@ -1,3 +1,6 @@
+// Copyright (c) HashiCorp, Inc.
+// SPDX-License-Identifier: MPL-2.0
+
 package eventhub
 
 import (
@@ -5,25 +8,26 @@ import (
 	"context"
 	"fmt"
 	"log"
-	"strconv"
 	"strings"
 	"time"
 
+	"github.com/hashicorp/go-azure-helpers/lang/pointer"
 	"github.com/hashicorp/go-azure-helpers/lang/response"
+	"github.com/hashicorp/go-azure-helpers/resourcemanager/commonids"
 	"github.com/hashicorp/go-azure-helpers/resourcemanager/commonschema"
 	"github.com/hashicorp/go-azure-helpers/resourcemanager/identity"
 	"github.com/hashicorp/go-azure-helpers/resourcemanager/location"
 	"github.com/hashicorp/go-azure-helpers/resourcemanager/tags"
-	"github.com/hashicorp/go-azure-sdk/resource-manager/eventhub/2021-11-01/authorizationrulesnamespaces"
-	"github.com/hashicorp/go-azure-sdk/resource-manager/eventhub/2021-11-01/eventhubsclusters"
-	"github.com/hashicorp/go-azure-sdk/resource-manager/eventhub/2021-11-01/networkrulesets"
-	"github.com/hashicorp/go-azure-sdk/resource-manager/eventhub/2022-01-01-preview/namespaces"
+	"github.com/hashicorp/go-azure-sdk/resource-manager/eventhub/2024-01-01/authorizationrulesnamespaces"
+	"github.com/hashicorp/go-azure-sdk/resource-manager/eventhub/2024-01-01/eventhubsclusters"
+	"github.com/hashicorp/go-azure-sdk/resource-manager/eventhub/2024-01-01/namespaces"
+	"github.com/hashicorp/go-azure-sdk/resource-manager/eventhub/2024-01-01/networkrulesets"
 	"github.com/hashicorp/terraform-provider-azurerm/helpers/azure"
 	"github.com/hashicorp/terraform-provider-azurerm/helpers/tf"
 	"github.com/hashicorp/terraform-provider-azurerm/internal/clients"
 	"github.com/hashicorp/terraform-provider-azurerm/internal/features"
+	"github.com/hashicorp/terraform-provider-azurerm/internal/locks"
 	"github.com/hashicorp/terraform-provider-azurerm/internal/services/eventhub/validate"
-	"github.com/hashicorp/terraform-provider-azurerm/internal/services/network/parse"
 	"github.com/hashicorp/terraform-provider-azurerm/internal/tf/pluginsdk"
 	"github.com/hashicorp/terraform-provider-azurerm/internal/tf/suppress"
 	"github.com/hashicorp/terraform-provider-azurerm/internal/tf/validation"
@@ -91,14 +95,6 @@ func resourceEventHubNamespace() *pluginsdk.Resource {
 				Default:  false,
 			},
 
-			// for premium namespace, zone redundant is computed by service based on the availability of availability zone feature.
-			"zone_redundant": {
-				Type:     pluginsdk.TypeBool,
-				Optional: true,
-				Computed: true,
-				ForceNew: true,
-			},
-
 			"dedicated_cluster_id": {
 				Type:         pluginsdk.TypeString,
 				Optional:     true,
@@ -111,7 +107,6 @@ func resourceEventHubNamespace() *pluginsdk.Resource {
 			"maximum_throughput_units": {
 				Type:         pluginsdk.TypeInt,
 				Optional:     true,
-				Computed:     true,
 				ValidateFunc: validation.IntBetween(0, 40),
 			},
 
@@ -143,13 +138,11 @@ func resourceEventHubNamespace() *pluginsdk.Resource {
 							Optional: true,
 						},
 
-						// 128 limit per https://docs.microsoft.com/azure/event-hubs/event-hubs-quotas
 						// Returned value of the `virtual_network_rule` array does not honor the input order,
 						// possibly a service design, thus changed to TypeSet
 						"virtual_network_rule": {
 							Type:       pluginsdk.TypeSet,
 							Optional:   true,
-							MaxItems:   128,
 							ConfigMode: pluginsdk.SchemaConfigModeAttr,
 							Set:        resourceVnetRuleHash,
 							Elem: &pluginsdk.Resource{
@@ -159,7 +152,7 @@ func resourceEventHubNamespace() *pluginsdk.Resource {
 									"subnet_id": {
 										Type:             pluginsdk.TypeString,
 										Required:         true,
-										ValidateFunc:     azure.ValidateResourceID,
+										ValidateFunc:     commonids.ValidateSubnetID,
 										DiffSuppressFunc: suppress.CaseDifference,
 									},
 
@@ -171,11 +164,9 @@ func resourceEventHubNamespace() *pluginsdk.Resource {
 							},
 						},
 
-						// 128 limit per https://docs.microsoft.com/azure/event-hubs/event-hubs-quotas
 						"ip_rule": {
 							Type:       pluginsdk.TypeList,
 							Optional:   true,
-							MaxItems:   128,
 							ConfigMode: pluginsdk.SchemaConfigModeAttr,
 							Elem: &pluginsdk.Resource{
 								Schema: map[string]*pluginsdk.Schema{
@@ -208,10 +199,8 @@ func resourceEventHubNamespace() *pluginsdk.Resource {
 			"minimum_tls_version": {
 				Type:     pluginsdk.TypeString,
 				Optional: true,
-				Computed: true,
+				Default:  string(namespaces.TlsVersionOnePointTwo),
 				ValidateFunc: validation.StringInSlice([]string{
-					string(namespaces.TlsVersionOnePointZero),
-					string(namespaces.TlsVersionOnePointOne),
 					string(namespaces.TlsVersionOnePointTwo),
 				}, false),
 			},
@@ -275,12 +264,17 @@ func resourceEventHubNamespace() *pluginsdk.Resource {
 			pluginsdk.CustomizeDiffShim(eventhubTLSVersionDiff),
 		),
 	}
-	if !features.FourPointOhBeta() {
-		resource.Schema["zone_redundant"] = &pluginsdk.Schema{
-			Type:     pluginsdk.TypeBool,
+
+	if !features.FivePointOh() {
+		resource.Schema["minimum_tls_version"] = &pluginsdk.Schema{
+			Type:     pluginsdk.TypeString,
 			Optional: true,
-			Default:  false,
-			ForceNew: true,
+			Default:  string(namespaces.TlsVersionOnePointTwo),
+			ValidateFunc: validation.StringInSlice([]string{
+				string(namespaces.TlsVersionOnePointZero),
+				string(namespaces.TlsVersionOnePointOne),
+				string(namespaces.TlsVersionOnePointTwo),
+			}, false),
 		}
 	}
 	return resource
@@ -300,6 +294,9 @@ func resourceEventHubNamespaceCreate(d *pluginsdk.ResourceData, meta interface{}
 			return fmt.Errorf("checking for presence of existing %s: %+v", id, err)
 		}
 	}
+
+	locks.ByName(id.NamespaceName, eventHubNamespaceResourceName)
+	defer locks.UnlockByName(id.NamespaceName, eventHubNamespaceResourceName)
 
 	if existing.Model != nil {
 		return tf.ImportAsExistsError("azurerm_eventhub_namespace", id.ID())
@@ -343,11 +340,6 @@ func resourceEventHubNamespaceCreate(d *pluginsdk.ResourceData, meta interface{}
 			PublicNetworkAccess:  &publicNetworkEnabled,
 		},
 		Tags: tags.Expand(t),
-	}
-
-	// for premium namespace, the zone_redundant is computed based on the region, user's input will be overridden
-	if sku != string(namespaces.SkuNamePremium) {
-		parameters.Properties.ZoneRedundant = utils.Bool(d.Get("zone_redundant").(bool))
 	}
 
 	if v := d.Get("dedicated_cluster_id").(string); v != "" {
@@ -403,6 +395,9 @@ func resourceEventHubNamespaceUpdate(d *pluginsdk.ResourceData, meta interface{}
 
 	id := namespaces.NewNamespaceID(subscriptionId, d.Get("resource_group_name").(string), d.Get("name").(string))
 
+	locks.ByName(id.NamespaceName, eventHubNamespaceResourceName)
+	defer locks.UnlockByName(id.NamespaceName, eventHubNamespaceResourceName)
+
 	location := azure.NormalizeLocation(d.Get("location").(string))
 	sku := d.Get("sku").(string)
 	capacity := int32(d.Get("capacity").(int))
@@ -443,10 +438,6 @@ func resourceEventHubNamespaceUpdate(d *pluginsdk.ResourceData, meta interface{}
 		Tags: tags.Expand(t),
 	}
 
-	if !features.FourPointOhBeta() {
-		parameters.Properties.ZoneRedundant = utils.Bool(d.Get("zone_redundant").(bool))
-	}
-
 	if v := d.Get("dedicated_cluster_id").(string); v != "" {
 		parameters.Properties.ClusterArmId = utils.String(v)
 	}
@@ -469,8 +460,21 @@ func resourceEventHubNamespaceUpdate(d *pluginsdk.ResourceData, meta interface{}
 		parameters.Properties.MaximumThroughputUnits = utils.Int64(0)
 	}
 
-	if _, err := client.Update(ctx, id, parameters); err != nil {
+	if _, err = client.Update(ctx, id, parameters); err != nil {
 		return fmt.Errorf("updating %s: %+v", id, err)
+	}
+
+	deadline, _ := ctx.Deadline()
+	stateConf := &pluginsdk.StateChangeConf{
+		Pending:      []string{"Activating", "ActivatingIdentity", "Updating", "Pending"},
+		Target:       []string{"Succeeded"},
+		Refresh:      eventHubNamespaceProvisioningStateRefreshFunc(ctx, client, id),
+		Timeout:      time.Until(deadline),
+		PollInterval: 10 * time.Second,
+	}
+
+	if _, err := stateConf.WaitForStateContext(ctx); err != nil {
+		return fmt.Errorf("waiting for %s to be updated: %+v", id, err)
 	}
 
 	if d.HasChange("network_rulesets") {
@@ -493,19 +497,6 @@ func resourceEventHubNamespaceUpdate(d *pluginsdk.ResourceData, meta interface{}
 		if _, err := ruleSetsClient.NamespacesCreateOrUpdateNetworkRuleSet(ctx, namespaceId, rulesets); err != nil {
 			return fmt.Errorf("setting network ruleset properties for %s: %+v", id, err)
 		}
-	}
-
-	deadline, _ := ctx.Deadline()
-	stateConf := &pluginsdk.StateChangeConf{
-		Pending:      []string{"Activating", "ActivatingIdentity", "Updating", "Pending"},
-		Target:       []string{"Succeeded"},
-		Refresh:      eventHubNamespaceProvisioningStateRefreshFunc(ctx, client, id),
-		Timeout:      time.Until(deadline),
-		PollInterval: 10 * time.Second,
-	}
-
-	if _, err := stateConf.WaitForStateContext(ctx); err != nil {
-		return fmt.Errorf("waiting for %s to be updated: %+v", id, err)
 	}
 
 	return resourceEventHubNamespaceRead(d, meta)
@@ -555,7 +546,6 @@ func resourceEventHubNamespaceRead(d *pluginsdk.ResourceData, meta interface{}) 
 		if props := model.Properties; props != nil {
 			d.Set("auto_inflate_enabled", props.IsAutoInflateEnabled)
 			d.Set("maximum_throughput_units", int(*props.MaximumThroughputUnits))
-			d.Set("zone_redundant", props.ZoneRedundant)
 			d.Set("dedicated_cluster_id", props.ClusterArmId)
 
 			localAuthDisabled := false
@@ -569,10 +559,7 @@ func resourceEventHubNamespaceRead(d *pluginsdk.ResourceData, meta interface{}) 
 				publicNetworkAccess = false
 			}
 			d.Set("public_network_access_enabled", publicNetworkAccess)
-
-			if props.MinimumTlsVersion != nil {
-				d.Set("minimum_tls_version", *props.MinimumTlsVersion)
-			}
+			d.Set("minimum_tls_version", string(pointer.From(props.MinimumTlsVersion)))
 		}
 
 		if err := tags.FlattenAndSet(d, model.Tags); err != nil {
@@ -622,101 +609,14 @@ func resourceEventHubNamespaceDelete(d *pluginsdk.ResourceData, meta interface{}
 		return err
 	}
 
-	// need to wait for namespace status to be ready before deleting.
-	if err := waitForEventHubNamespaceStatusToBeReady(ctx, meta, *id, d.Timeout(pluginsdk.TimeoutUpdate)); err != nil {
-		return fmt.Errorf("waiting for eventHub namespace %s state to be ready error: %+v", *id, err)
-	}
+	locks.ByName(id.NamespaceName, eventHubNamespaceResourceName)
+	defer locks.UnlockByName(id.NamespaceName, eventHubNamespaceResourceName)
 
-	future, err := client.Delete(ctx, *id)
-	if err != nil {
-		if response.WasNotFound(future.HttpResponse) {
-			return nil
-		}
+	if err = client.DeleteThenPoll(ctx, *id); err != nil {
 		return fmt.Errorf("deleting %s: %+v", *id, err)
 	}
 
-	return waitForEventHubNamespaceToBeDeleted(ctx, client, *id)
-}
-
-func waitForEventHubNamespaceStatusToBeReady(ctx context.Context, meta interface{}, id namespaces.NamespaceId, timeout time.Duration) error {
-	namespaceClient := meta.(*clients.Client).Eventhub.NamespacesClient
-	stateConf := &pluginsdk.StateChangeConf{
-		Pending: []string{
-			string(namespaces.EndPointProvisioningStateUpdating),
-			string(namespaces.EndPointProvisioningStateCreating),
-			string(namespaces.EndPointProvisioningStateDeleting),
-		},
-		Target:                    []string{string(namespaces.EndPointProvisioningStateSucceeded)},
-		Refresh:                   eventHubNamespaceProvisioningStateRefreshFunc(ctx, namespaceClient, id),
-		Timeout:                   timeout,
-		PollInterval:              10 * time.Second,
-		ContinuousTargetOccurence: 5,
-	}
-
-	if _, err := stateConf.WaitForStateContext(ctx); err != nil {
-		return err
-	}
 	return nil
-}
-
-func waitForEventHubNamespaceToBeDeleted(ctx context.Context, client *namespaces.NamespacesClient, id namespaces.NamespaceId) error {
-	deadline, ok := ctx.Deadline()
-	if !ok {
-		return fmt.Errorf("context has no deadline")
-	}
-
-	// we can't use the Waiter here since the API returns a 200 once it's deleted which is considered a polling status code..
-	log.Printf("[DEBUG] Waiting for %s to be deleted..", id)
-	stateConf := &pluginsdk.StateChangeConf{
-		Pending: []string{"200"},
-		Target:  []string{"404"},
-		Refresh: eventHubNamespaceStateStatusCodeRefreshFunc(ctx, client, id),
-		Timeout: time.Until(deadline),
-	}
-
-	if _, err := stateConf.WaitForStateContext(ctx); err != nil {
-		return fmt.Errorf("waiting for %s to be deleted: %+v", id, err)
-	}
-
-	return nil
-}
-
-func eventHubNamespaceStateStatusCodeRefreshFunc(ctx context.Context, client *namespaces.NamespacesClient, id namespaces.NamespaceId) pluginsdk.StateRefreshFunc {
-	return func() (interface{}, string, error) {
-		res, err := client.Get(ctx, id)
-		if res.HttpResponse != nil {
-			log.Printf("Retrieving %s returned Status %d", id, res.HttpResponse.StatusCode)
-		}
-
-		if err != nil {
-			if response.WasNotFound(res.HttpResponse) {
-				return res, strconv.Itoa(res.HttpResponse.StatusCode), nil
-			}
-			return nil, "", fmt.Errorf("polling for the status of %s: %+v", id, err)
-		}
-
-		return res, strconv.Itoa(res.HttpResponse.StatusCode), nil
-	}
-}
-
-func eventHubNamespaceProvisioningStateRefreshFunc(ctx context.Context, client *namespaces.NamespacesClient, id namespaces.NamespaceId) pluginsdk.StateRefreshFunc {
-	return func() (interface{}, string, error) {
-		res, err := client.Get(ctx, id)
-
-		provisioningState := "Pending"
-		if err != nil {
-			if response.WasNotFound(res.HttpResponse) {
-				return res, provisioningState, nil
-			}
-			return nil, "Error", fmt.Errorf("polling for the provisioning state of %s: %+v", id, err)
-		}
-
-		if res.Model != nil && res.Model.Properties != nil && res.Model.Properties.ProvisioningState != nil {
-			provisioningState = *res.Model.Properties.ProvisioningState
-		}
-
-		return res, provisioningState, nil
-	}
 }
 
 func expandEventHubNamespaceNetworkRuleset(input []interface{}) *networkrulesets.NetworkRuleSetProperties {
@@ -797,7 +697,7 @@ func flattenEventHubNamespaceNetworkRuleset(ruleset networkrulesets.NamespacesGe
 					// the API returns the subnet ID's resource group name in lowercase
 					// https://github.com/Azure/azure-sdk-for-go/issues/5855
 					// for some reason the DiffSuppressFunc for `subnet_id` isn't working as intended, so we'll also flatten the id insensitively
-					subnetId, err := parse.SubnetIDInsensitively(*v)
+					subnetId, err := commonids.ParseSubnetIDInsensitively(*v)
 					if err != nil {
 						return nil, fmt.Errorf("parsing `subnet_id`: %+v", err)
 					}
@@ -869,4 +769,24 @@ func eventhubTLSVersionDiff(ctx context.Context, d *pluginsdk.ResourceDiff, _ in
 		err = fmt.Errorf("`minimum_tls_version` has been set before, please set a valid value for this property ")
 	}
 	return
+}
+
+func eventHubNamespaceProvisioningStateRefreshFunc(ctx context.Context, client *namespaces.NamespacesClient, id namespaces.NamespaceId) pluginsdk.StateRefreshFunc {
+	return func() (interface{}, string, error) {
+		res, err := client.Get(ctx, id)
+
+		provisioningState := "Pending"
+		if err != nil {
+			if response.WasNotFound(res.HttpResponse) {
+				return res, provisioningState, nil
+			}
+			return nil, "Error", fmt.Errorf("polling for the provisioning state of %s: %+v", id, err)
+		}
+
+		if res.Model != nil && res.Model.Properties != nil && res.Model.Properties.ProvisioningState != nil {
+			provisioningState = *res.Model.Properties.ProvisioningState
+		}
+
+		return res, provisioningState, nil
+	}
 }

@@ -1,3 +1,6 @@
+// Copyright (c) HashiCorp, Inc.
+// SPDX-License-Identifier: MPL-2.0
+
 package cognitive
 
 import (
@@ -6,13 +9,15 @@ import (
 	"log"
 	"time"
 
+	"github.com/hashicorp/go-azure-helpers/lang/pointer"
 	"github.com/hashicorp/go-azure-helpers/lang/response"
+	"github.com/hashicorp/go-azure-helpers/resourcemanager/commonids"
 	"github.com/hashicorp/go-azure-helpers/resourcemanager/commonschema"
 	"github.com/hashicorp/go-azure-helpers/resourcemanager/identity"
 	"github.com/hashicorp/go-azure-helpers/resourcemanager/location"
 	"github.com/hashicorp/go-azure-helpers/resourcemanager/tags"
-	"github.com/hashicorp/go-azure-sdk/resource-manager/cognitive/2022-10-01/cognitiveservicesaccounts"
-	search "github.com/hashicorp/go-azure-sdk/resource-manager/search/2020-03-13/services"
+	"github.com/hashicorp/go-azure-sdk/resource-manager/cognitive/2024-10-01/cognitiveservicesaccounts"
+	search "github.com/hashicorp/go-azure-sdk/resource-manager/search/2024-06-01-preview/services"
 	"github.com/hashicorp/terraform-provider-azurerm/helpers/azure"
 	"github.com/hashicorp/terraform-provider-azurerm/helpers/tf"
 	commonValidate "github.com/hashicorp/terraform-provider-azurerm/helpers/validate"
@@ -22,8 +27,6 @@ import (
 	keyVaultParse "github.com/hashicorp/terraform-provider-azurerm/internal/services/keyvault/parse"
 	keyVaultValidate "github.com/hashicorp/terraform-provider-azurerm/internal/services/keyvault/validate"
 	"github.com/hashicorp/terraform-provider-azurerm/internal/services/network"
-	networkParse "github.com/hashicorp/terraform-provider-azurerm/internal/services/network/parse"
-	storageValidate "github.com/hashicorp/terraform-provider-azurerm/internal/services/storage/validate"
 	"github.com/hashicorp/terraform-provider-azurerm/internal/tf/pluginsdk"
 	"github.com/hashicorp/terraform-provider-azurerm/internal/tf/set"
 	"github.com/hashicorp/terraform-provider-azurerm/internal/tf/validation"
@@ -80,6 +83,8 @@ func resourceCognitiveAccount() *pluginsdk.Resource {
 					"CognitiveServices",
 					"ComputerVision",
 					"ContentModerator",
+					"ConversationalLanguageUnderstanding",
+					"ContentSafety",
 					"CustomSpeech",
 					"CustomVision.Prediction",
 					"CustomVision.Training",
@@ -108,7 +113,7 @@ func resourceCognitiveAccount() *pluginsdk.Resource {
 				Type:     pluginsdk.TypeString,
 				Required: true,
 				ValidateFunc: validation.StringInSlice([]string{
-					"F0", "F1", "S0", "S", "S1", "S2", "S3", "S4", "S5", "S6", "P0", "P1", "P2", "E0",
+					"F0", "F1", "S0", "S", "S1", "S2", "S3", "S4", "S5", "S6", "P0", "P1", "P2", "E0", "DC0",
 				}, false),
 			},
 
@@ -237,6 +242,15 @@ func resourceCognitiveAccount() *pluginsdk.Resource {
 								},
 							},
 						},
+
+						"bypass": {
+							Type:     pluginsdk.TypeString,
+							Optional: true,
+							ValidateFunc: validation.StringInSlice(
+								cognitiveservicesaccounts.PossibleValuesForByPassSelection(),
+								false,
+							),
+						},
 					},
 				},
 			},
@@ -268,6 +282,7 @@ func resourceCognitiveAccount() *pluginsdk.Resource {
 				Type:         pluginsdk.TypeString,
 				Optional:     true,
 				ValidateFunc: validation.StringIsNotEmpty,
+				Sensitive:    true,
 			},
 
 			"storage": {
@@ -278,7 +293,7 @@ func resourceCognitiveAccount() *pluginsdk.Resource {
 						"storage_account_id": {
 							Type:         pluginsdk.TypeString,
 							Required:     true,
-							ValidateFunc: storageValidate.StorageAccountID,
+							ValidateFunc: commonids.ValidateStorageAccountID,
 						},
 
 						"identity_client_id": {
@@ -334,17 +349,19 @@ func resourceCognitiveAccountCreate(d *pluginsdk.ResourceData, meta interface{})
 		}
 	}
 
-	sku, err := expandAccountSkuName(d.Get("sku_name").(string))
-	if err != nil {
-		return fmt.Errorf("expanding sku_name for %s: %v", id, err)
+	sku := cognitiveservicesaccounts.Sku{
+		Name: d.Get("sku_name").(string),
 	}
 
-	networkAcls, subnetIds := expandCognitiveAccountNetworkAcls(d)
+	networkAcls, subnetIds, err := expandCognitiveAccountNetworkAcls(d)
+	if err != nil {
+		return err
+	}
 
 	// also lock on the Virtual Network ID's since modifications in the networking stack are exclusive
 	virtualNetworkNames := make([]string, 0)
 	for _, v := range subnetIds {
-		id, err := networkParse.SubnetIDInsensitively(v)
+		id, err := commonids.ParseSubnetIDInsensitively(v)
 		if err != nil {
 			return err
 		}
@@ -369,7 +386,7 @@ func resourceCognitiveAccountCreate(d *pluginsdk.ResourceData, meta interface{})
 	props := cognitiveservicesaccounts.Account{
 		Kind:     utils.String(kind),
 		Location: utils.String(azure.NormalizeLocation(d.Get("location").(string))),
-		Sku:      sku,
+		Sku:      &sku,
 		Properties: &cognitiveservicesaccounts.AccountProperties{
 			ApiProperties:                 apiProps,
 			NetworkAcls:                   networkAcls,
@@ -421,17 +438,19 @@ func resourceCognitiveAccountUpdate(d *pluginsdk.ResourceData, meta interface{})
 		return err
 	}
 
-	sku, err := expandAccountSkuName(d.Get("sku_name").(string))
-	if err != nil {
-		return fmt.Errorf("expanding sku_name for %s: %+v", *id, err)
+	sku := cognitiveservicesaccounts.Sku{
+		Name: d.Get("sku_name").(string),
 	}
 
-	networkAcls, subnetIds := expandCognitiveAccountNetworkAcls(d)
+	networkAcls, subnetIds, err := expandCognitiveAccountNetworkAcls(d)
+	if err != nil {
+		return err
+	}
 
 	// also lock on the Virtual Network ID's since modifications in the networking stack are exclusive
 	virtualNetworkNames := make([]string, 0)
 	for _, v := range subnetIds {
-		id, err := networkParse.SubnetIDInsensitively(v)
+		id, err := commonids.ParseSubnetIDInsensitively(v)
 		if err != nil {
 			return err
 		}
@@ -454,7 +473,7 @@ func resourceCognitiveAccountUpdate(d *pluginsdk.ResourceData, meta interface{})
 	}
 
 	props := cognitiveservicesaccounts.Account{
-		Sku: sku,
+		Sku: &sku,
 		Properties: &cognitiveservicesaccounts.AccountProperties{
 			ApiProperties:                 apiProps,
 			NetworkAcls:                   networkAcls,
@@ -469,6 +488,17 @@ func resourceCognitiveAccountUpdate(d *pluginsdk.ResourceData, meta interface{})
 		},
 		Tags: tags.Expand(d.Get("tags").(map[string]interface{})),
 	}
+
+	if d.HasChanges("customer_managed_key") {
+		old, new := d.GetChange("customer_managed_key")
+		// Remove `customer_managed_key` (switch using a customer managed key to microsoft managed), and explicitly specify KeySource as `Microsoft.CognitiveServices`.
+		if len(old.([]interface{})) > 0 && len(new.([]interface{})) == 0 {
+			props.Properties.Encryption = &cognitiveservicesaccounts.Encryption{
+				KeySource: pointer.To(cognitiveservicesaccounts.KeySourceMicrosoftPointCognitiveServices),
+			}
+		}
+	}
+
 	identityRaw := d.Get("identity").([]interface{})
 	identity, err := identity.ExpandSystemAndUserAssignedMap(identityRaw)
 	if err != nil {
@@ -513,17 +543,6 @@ func resourceCognitiveAccountRead(d *pluginsdk.ResourceData, meta interface{}) e
 		}
 
 		return fmt.Errorf("retrieving %s: %+v", *id, err)
-	}
-
-	keys, err := client.AccountsListKeys(ctx, *id)
-	if err != nil {
-		// note for the resource we shouldn't gracefully fail since we have permission to CRUD it
-		return fmt.Errorf("listing the Keys for %s: %+v", *id, err)
-	}
-
-	if model := keys.Model; model != nil {
-		d.Set("primary_access_key", model.Key1)
-		d.Set("secondary_access_key", model.Key2)
 	}
 
 	d.Set("name", id.AccountName)
@@ -588,6 +607,19 @@ func resourceCognitiveAccountRead(d *pluginsdk.ResourceData, meta interface{}) e
 			}
 			d.Set("local_auth_enabled", localAuthEnabled)
 
+			if localAuthEnabled {
+				keys, err := client.AccountsListKeys(ctx, *id)
+				if err != nil {
+					// note for the resource we shouldn't gracefully fail since we have permission to CRUD it
+					return fmt.Errorf("listing the Keys for %s: %+v", *id, err)
+				}
+
+				if model := keys.Model; model != nil {
+					d.Set("primary_access_key", model.Key1)
+					d.Set("secondary_access_key", model.Key2)
+				}
+			}
+
 			customerManagedKey, err := flattenCognitiveAccountCustomerManagedKey(props.Encryption)
 			if err != nil {
 				return err
@@ -643,27 +675,6 @@ func resourceCognitiveAccountDelete(d *pluginsdk.ResourceData, meta interface{})
 	return nil
 }
 
-func expandAccountSkuName(skuName string) (*cognitiveservicesaccounts.Sku, error) {
-	var tier cognitiveservicesaccounts.SkuTier
-	switch skuName[0:1] {
-	case "F":
-		tier = cognitiveservicesaccounts.SkuTierFree
-	case "S":
-		tier = cognitiveservicesaccounts.SkuTierStandard
-	case "P":
-		tier = cognitiveservicesaccounts.SkuTierPremium
-	case "E":
-		tier = cognitiveservicesaccounts.SkuTierEnterprise
-	default:
-		return nil, fmt.Errorf("sku_name %s has unknown sku tier %s", skuName, skuName[0:1])
-	}
-
-	return &cognitiveservicesaccounts.Sku{
-		Name: skuName,
-		Tier: &tier,
-	}, nil
-}
-
 func cognitiveAccountStateRefreshFunc(ctx context.Context, client *cognitiveservicesaccounts.CognitiveServicesAccountsClient, id cognitiveservicesaccounts.AccountId) pluginsdk.StateRefreshFunc {
 	return func() (interface{}, string, error) {
 		res, err := client.AccountsGet(ctx, id)
@@ -678,11 +689,11 @@ func cognitiveAccountStateRefreshFunc(ctx context.Context, client *cognitiveserv
 	}
 }
 
-func expandCognitiveAccountNetworkAcls(d *pluginsdk.ResourceData) (*cognitiveservicesaccounts.NetworkRuleSet, []string) {
+func expandCognitiveAccountNetworkAcls(d *pluginsdk.ResourceData) (*cognitiveservicesaccounts.NetworkRuleSet, []string, error) {
 	input := d.Get("network_acls").([]interface{})
 	subnetIds := make([]string, 0)
 	if len(input) == 0 || input[0] == nil {
-		return nil, subnetIds
+		return nil, subnetIds, nil
 	}
 
 	v := input[0].(map[string]interface{})
@@ -717,7 +728,17 @@ func expandCognitiveAccountNetworkAcls(d *pluginsdk.ResourceData) (*cognitiveser
 		IPRules:             &ipRules,
 		VirtualNetworkRules: &networkRules,
 	}
-	return &ruleSet, subnetIds
+
+	if b, ok := d.GetOk("network_acls.0.bypass"); ok && b != "" {
+		kind := d.Get("kind").(string)
+		if kind != "OpenAI" {
+			return nil, nil, fmt.Errorf("the `network_acls.bypass` does not support Trusted Services for the kind %q", kind)
+		}
+		bypasss := cognitiveservicesaccounts.ByPassSelection(v["bypass"].(string))
+		ruleSet.Bypass = &bypasss
+	}
+
+	return &ruleSet, subnetIds, nil
 }
 
 func expandCognitiveAccountStorage(input []interface{}) *[]cognitiveservicesaccounts.UserOwnedStorage {
@@ -806,7 +827,7 @@ func flattenCognitiveAccountNetworkAcls(input *cognitiveservicesaccounts.Network
 	if input.VirtualNetworkRules != nil {
 		for _, v := range *input.VirtualNetworkRules {
 			id := v.Id
-			subnetId, err := networkParse.SubnetIDInsensitively(v.Id)
+			subnetId, err := commonids.ParseSubnetIDInsensitively(v.Id)
 			if err == nil {
 				id = subnetId.ID()
 			}
@@ -819,6 +840,7 @@ func flattenCognitiveAccountNetworkAcls(input *cognitiveservicesaccounts.Network
 	}
 
 	return []interface{}{map[string]interface{}{
+		"bypass":                input.Bypass,
 		"default_action":        input.DefaultAction,
 		"ip_rules":              pluginsdk.NewSet(pluginsdk.HashString, ipRules),
 		"virtual_network_rules": virtualNetworkRules,
@@ -850,6 +872,10 @@ func expandCognitiveAccountCustomerManagedKey(input []interface{}) *cognitiveser
 
 	v := input[0].(map[string]interface{})
 	keyId, _ := keyVaultParse.ParseOptionallyVersionedNestedItemID(v["key_vault_key_id"].(string))
+	if keyId == nil {
+		return nil
+	}
+
 	keySource := cognitiveservicesaccounts.KeySourceMicrosoftPointKeyVault
 
 	var identity string
@@ -869,14 +895,14 @@ func expandCognitiveAccountCustomerManagedKey(input []interface{}) *cognitiveser
 }
 
 func flattenCognitiveAccountCustomerManagedKey(input *cognitiveservicesaccounts.Encryption) ([]interface{}, error) {
-	if input == nil {
+	if input == nil || pointer.From(input.KeySource) == cognitiveservicesaccounts.KeySourceMicrosoftPointCognitiveServices {
 		return []interface{}{}, nil
 	}
 
 	var keyId string
 	var identityClientId string
 	if props := input.KeyVaultProperties; props != nil {
-		keyVaultKeyId, err := keyVaultParse.NewNestedItemID(*props.KeyVaultUri, "keys", *props.KeyName, *props.KeyVersion)
+		keyVaultKeyId, err := keyVaultParse.NewNestedItemID(*props.KeyVaultUri, keyVaultParse.NestedItemTypeKey, *props.KeyName, *props.KeyVersion)
 		if err != nil {
 			return nil, fmt.Errorf("parsing `key_vault_key_id`: %+v", err)
 		}

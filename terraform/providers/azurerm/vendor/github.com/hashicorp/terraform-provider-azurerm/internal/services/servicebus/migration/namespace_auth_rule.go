@@ -1,3 +1,6 @@
+// Copyright (c) HashiCorp, Inc.
+// SPDX-License-Identifier: MPL-2.0
+
 package migration
 
 import (
@@ -18,7 +21,7 @@ func (ServicebusNamespaceAuthRuleV0ToV1) Schema() map[string]*pluginsdk.Schema {
 			Required: true,
 			ForceNew: true,
 		},
-		//lintignore: S013
+		// lintignore: S013
 		"namespace_id": {
 			Type:     pluginsdk.TypeString,
 			Required: true,

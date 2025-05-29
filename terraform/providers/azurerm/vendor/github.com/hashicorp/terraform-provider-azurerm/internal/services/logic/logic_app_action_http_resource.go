@@ -1,3 +1,6 @@
+// Copyright (c) HashiCorp, Inc.
+// SPDX-License-Identifier: MPL-2.0
+
 package logic
 
 import (
@@ -11,7 +14,6 @@ import (
 	"github.com/hashicorp/go-azure-sdk/resource-manager/logic/2019-05-01/workflowrunactions"
 	"github.com/hashicorp/go-azure-sdk/resource-manager/logic/2019-05-01/workflows"
 	"github.com/hashicorp/terraform-plugin-sdk/v2/helper/schema"
-	"github.com/hashicorp/terraform-provider-azurerm/helpers/azure"
 	"github.com/hashicorp/terraform-provider-azurerm/internal/services/logic/parse"
 	"github.com/hashicorp/terraform-provider-azurerm/internal/tags"
 	"github.com/hashicorp/terraform-provider-azurerm/internal/tf/pluginsdk"
@@ -48,7 +50,7 @@ func resourceLogicAppActionHTTP() *pluginsdk.Resource {
 				Type:         pluginsdk.TypeString,
 				Required:     true,
 				ForceNew:     true,
-				ValidateFunc: azure.ValidateResourceID,
+				ValidateFunc: workflows.ValidateWorkflowID,
 			},
 
 			"method": {
@@ -301,6 +303,12 @@ func expandLogicAppActionHttpHeaders(headersRaw map[string]interface{}) (*map[st
 }
 
 func expandLogicAppActionHttpQueries(queriesRaw map[string]interface{}) (*map[string]string, error) {
+	// per the issue https://github.com/hashicorp/terraform-provider-azurerm/issues/28429
+	// empty map and nil are different on the service side.
+	if len(queriesRaw) == 0 {
+		return nil, nil
+	}
+
 	queries := make(map[string]string)
 
 	for i, v := range queriesRaw {

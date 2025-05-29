@@ -1,3 +1,6 @@
+// Copyright (c) HashiCorp, Inc.
+// SPDX-License-Identifier: MPL-2.0
+
 package migration
 
 import (
@@ -10,8 +13,7 @@ import (
 
 var _ pluginsdk.StateUpgrade = BuildPackBindingV0ToV1{}
 
-type BuildPackBindingV0ToV1 struct {
-}
+type BuildPackBindingV0ToV1 struct{}
 
 func (BuildPackBindingV0ToV1) Schema() map[string]*pluginsdk.Schema {
 	return map[string]*pluginsdk.Schema{

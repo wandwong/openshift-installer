@@ -1,20 +1,24 @@
+// Copyright (c) HashiCorp, Inc.
+// SPDX-License-Identifier: MPL-2.0
+
 package storage
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"strings"
 	"time"
 
 	"github.com/hashicorp/go-azure-helpers/lang/pointer"
 	"github.com/hashicorp/go-azure-helpers/lang/response"
-	"github.com/hashicorp/go-azure-sdk/resource-manager/storage/2022-05-01/localusers"
+	"github.com/hashicorp/go-azure-helpers/resourcemanager/commonids"
+	"github.com/hashicorp/go-azure-sdk/resource-manager/storage/2023-05-01/localusers"
 	"github.com/hashicorp/terraform-provider-azurerm/internal/sdk"
-	"github.com/hashicorp/terraform-provider-azurerm/internal/services/compute"
 	computevalidate "github.com/hashicorp/terraform-provider-azurerm/internal/services/compute/validate"
-	"github.com/hashicorp/terraform-provider-azurerm/internal/services/storage/parse"
 	"github.com/hashicorp/terraform-provider-azurerm/internal/services/storage/validate"
 	"github.com/hashicorp/terraform-provider-azurerm/internal/tf/pluginsdk"
+	"github.com/hashicorp/terraform-provider-azurerm/internal/tf/suppress"
 	"github.com/hashicorp/terraform-provider-azurerm/internal/tf/validation"
 	"github.com/hashicorp/terraform-provider-azurerm/utils"
 )
@@ -63,7 +67,7 @@ func (r LocalUserResource) Arguments() map[string]*pluginsdk.Schema {
 			Type:         pluginsdk.TypeString,
 			Required:     true,
 			ForceNew:     true,
-			ValidateFunc: validate.StorageAccountID,
+			ValidateFunc: commonids.ValidateStorageAccountID,
 		},
 		"ssh_key_enabled": {
 			Type:         pluginsdk.TypeBool,
@@ -84,7 +88,6 @@ func (r LocalUserResource) Arguments() map[string]*pluginsdk.Schema {
 		"ssh_authorized_key": {
 			Type:         pluginsdk.TypeList,
 			Optional:     true,
-			ForceNew:     true,
 			RequiredWith: []string{"ssh_key_enabled"},
 			Elem: &pluginsdk.Resource{
 				Schema: map[string]*pluginsdk.Schema{
@@ -92,7 +95,7 @@ func (r LocalUserResource) Arguments() map[string]*pluginsdk.Schema {
 						Type:             pluginsdk.TypeString,
 						Required:         true,
 						ValidateFunc:     computevalidate.SSHKey,
-						DiffSuppressFunc: compute.SSHKeyDiffSuppress,
+						DiffSuppressFunc: suppress.SSHKey,
 					},
 					"description": {
 						Type:     pluginsdk.TypeString,
@@ -210,7 +213,7 @@ func (r LocalUserResource) Create() sdk.ResourceFunc {
 	return sdk.ResourceFunc{
 		Timeout: 30 * time.Minute,
 		Func: func(ctx context.Context, metadata sdk.ResourceMetaData) error {
-			client := metadata.Client.Storage.LocalUsersClient
+			client := metadata.Client.Storage.ResourceManager.LocalUsers
 
 			var plan LocalUserModel
 			if err := metadata.Decode(&plan); err != nil {
@@ -220,18 +223,18 @@ func (r LocalUserResource) Create() sdk.ResourceFunc {
 			// Sanity checks on input
 			if plan.SshKeyEnabled != (len(plan.SshAuthorizedKey) != 0) {
 				if plan.SshKeyEnabled {
-					return fmt.Errorf("`ssh_authorized_key` should be specified when `ssh_key_enabled` is enabled")
+					return errors.New("`ssh_authorized_key` should be specified when `ssh_key_enabled` is enabled")
 				} else {
-					return fmt.Errorf("`ssh_authorized_key` should not be specified when `ssh_key_enabled` is disabled")
+					return errors.New("`ssh_authorized_key` should not be specified when `ssh_key_enabled` is disabled")
 				}
 			}
 
-			accountId, err := parse.StorageAccountID(plan.StorageAccountId)
+			accountId, err := commonids.ParseStorageAccountID(plan.StorageAccountId)
 			if err != nil {
 				return err
 			}
 
-			id := localusers.NewLocalUserID(accountId.SubscriptionId, accountId.ResourceGroup, accountId.Name, plan.Name)
+			id := localusers.NewLocalUserID(accountId.SubscriptionId, accountId.ResourceGroupName, accountId.StorageAccountName, plan.Name)
 			existing, err := client.Get(ctx, id)
 			if err != nil {
 				if !response.WasNotFound(existing.HttpResponse) {
@@ -287,7 +290,7 @@ func (r LocalUserResource) Read() sdk.ResourceFunc {
 		Timeout: 5 * time.Minute,
 
 		Func: func(ctx context.Context, metadata sdk.ResourceMetaData) error {
-			client := metadata.Client.Storage.LocalUsersClient
+			client := metadata.Client.Storage.ResourceManager.LocalUsers
 			id, err := localusers.ParseLocalUserID(metadata.ResourceData.Id())
 			if err != nil {
 				return err
@@ -308,7 +311,7 @@ func (r LocalUserResource) Read() sdk.ResourceFunc {
 
 			model := LocalUserModel{
 				Name:             id.LocalUserName,
-				StorageAccountId: parse.NewStorageAccountID(id.SubscriptionId, id.ResourceGroupName, id.StorageAccountName).ID(),
+				StorageAccountId: commonids.NewStorageAccountID(id.SubscriptionId, id.ResourceGroupName, id.StorageAccountName).ID(),
 				// Password is only accessible during creation
 				Password: state.Password,
 				// SshAuthorizedKey is only accessible during creation, whilst this should be returned as it is not a secret.
@@ -352,7 +355,7 @@ func (r LocalUserResource) Update() sdk.ResourceFunc {
 				return err
 			}
 
-			client := metadata.Client.Storage.LocalUsersClient
+			client := metadata.Client.Storage.ResourceManager.LocalUsers
 
 			params, err := client.Get(ctx, *id)
 			if err != nil {
@@ -382,6 +385,10 @@ func (r LocalUserResource) Update() sdk.ResourceFunc {
 
 			if metadata.ResourceData.HasChange("ssh_key_enabled") {
 				props.HasSshKey = &plan.SshKeyEnabled
+			}
+
+			if metadata.ResourceData.HasChange("ssh_authorized_key") {
+				props.SshAuthorizedKeys = r.expandSSHAuthorizedKeys(plan.SshAuthorizedKey)
 			}
 
 			if metadata.ResourceData.HasChange("ssh_password_enabled") {
@@ -424,7 +431,7 @@ func (r LocalUserResource) Delete() sdk.ResourceFunc {
 	return sdk.ResourceFunc{
 		Timeout: 30 * time.Minute,
 		Func: func(ctx context.Context, metadata sdk.ResourceMetaData) error {
-			client := metadata.Client.Storage.LocalUsersClient
+			client := metadata.Client.Storage.ResourceManager.LocalUsers
 
 			id, err := localusers.ParseLocalUserID(metadata.ResourceData.Id())
 			if err != nil {
@@ -445,8 +452,7 @@ func (r LocalUserResource) expandPermissionScopes(input []PermissionScopeModel) 
 		return nil
 	}
 
-	var output []localusers.PermissionScope
-
+	output := make([]localusers.PermissionScope, 0, len(input))
 	for _, v := range input {
 		// The length constraint is guaranteed by schema
 		permissions := v.Permissions[0]
@@ -482,8 +488,7 @@ func (r LocalUserResource) flattenPermissionScopes(input *[]localusers.Permissio
 		return nil
 	}
 
-	var output []PermissionScopeModel
-
+	output := make([]PermissionScopeModel, 0, len(*input))
 	for _, v := range *input {
 		permissions := PermissionsModel{}
 		// The Storage API's have a history of being case-insensitive, so we case-insensitively check the permission here.
@@ -519,8 +524,7 @@ func (r LocalUserResource) expandSSHAuthorizedKeys(input []SshAuthorizedKeyModel
 		return nil
 	}
 
-	var output []localusers.SshPublicKey
-
+	output := make([]localusers.SshPublicKey, 0, len(input))
 	for _, v := range input {
 		output = append(output, localusers.SshPublicKey{
 			Description: pointer.To(v.Description),

@@ -1,3 +1,6 @@
+// Copyright (c) HashiCorp, Inc.
+// SPDX-License-Identifier: MPL-2.0
+
 package streamanalytics
 
 import (
@@ -24,6 +27,7 @@ func (r Registration) Resources() []sdk.Resource {
 	return []sdk.Resource{
 		ClusterResource{},
 		JobScheduleResource{},
+		JobStorageAccountResource{},
 		ManagedPrivateEndpointResource{},
 		OutputFunctionResource{},
 		OutputTableResource{},

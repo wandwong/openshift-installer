@@ -1,8 +1,12 @@
+// Copyright (c) HashiCorp, Inc.
+// SPDX-License-Identifier: MPL-2.0
+
 package parse
 
 // NOTE: this file is generated via 'go:generate' - manual changes will be overwritten
 
 import (
+	"errors"
 	"fmt"
 	"strings"
 
@@ -44,6 +48,45 @@ func (id ProductId) ID() string {
 func ProductID(input string) (*ProductId, error) {
 	id, err := resourceids.ParseAzureResourceID(input)
 	if err != nil {
+		return nil, fmt.Errorf("parsing %q as an Product ID: %+v", input, err)
+	}
+
+	resourceId := ProductId{
+		SubscriptionId: id.SubscriptionID,
+		ResourceGroup:  id.ResourceGroup,
+	}
+
+	if resourceId.SubscriptionId == "" {
+		return nil, errors.New("ID was missing the 'subscriptions' element")
+	}
+
+	if resourceId.ResourceGroup == "" {
+		return nil, errors.New("ID was missing the 'resourceGroups' element")
+	}
+
+	if resourceId.ServiceName, err = id.PopSegment("service"); err != nil {
+		return nil, err
+	}
+	if resourceId.Name, err = id.PopSegment("products"); err != nil {
+		return nil, err
+	}
+
+	if err := id.ValidateNoEmptySegments(input); err != nil {
+		return nil, err
+	}
+
+	return &resourceId, nil
+}
+
+// ProductIDInsensitively parses an Product ID into an ProductId struct, insensitively
+// This should only be used to parse an ID for rewriting, the ProductID
+// method should be used instead for validation etc.
+//
+// Whilst this may seem strange, this enables Terraform have consistent casing
+// which works around issues in Core, whilst handling broken API responses.
+func ProductIDInsensitively(input string) (*ProductId, error) {
+	id, err := resourceids.ParseAzureResourceID(input)
+	if err != nil {
 		return nil, err
 	}
 
@@ -53,17 +96,34 @@ func ProductID(input string) (*ProductId, error) {
 	}
 
 	if resourceId.SubscriptionId == "" {
-		return nil, fmt.Errorf("ID was missing the 'subscriptions' element")
+		return nil, errors.New("ID was missing the 'subscriptions' element")
 	}
 
 	if resourceId.ResourceGroup == "" {
-		return nil, fmt.Errorf("ID was missing the 'resourceGroups' element")
+		return nil, errors.New("ID was missing the 'resourceGroups' element")
 	}
 
-	if resourceId.ServiceName, err = id.PopSegment("service"); err != nil {
+	// find the correct casing for the 'service' segment
+	serviceKey := "service"
+	for key := range id.Path {
+		if strings.EqualFold(key, serviceKey) {
+			serviceKey = key
+			break
+		}
+	}
+	if resourceId.ServiceName, err = id.PopSegment(serviceKey); err != nil {
 		return nil, err
 	}
-	if resourceId.Name, err = id.PopSegment("products"); err != nil {
+
+	// find the correct casing for the 'products' segment
+	productsKey := "products"
+	for key := range id.Path {
+		if strings.EqualFold(key, productsKey) {
+			productsKey = key
+			break
+		}
+	}
+	if resourceId.Name, err = id.PopSegment(productsKey); err != nil {
 		return nil, err
 	}
 

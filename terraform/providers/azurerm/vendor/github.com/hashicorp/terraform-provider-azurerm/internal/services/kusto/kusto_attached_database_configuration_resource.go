@@ -1,17 +1,22 @@
+// Copyright (c) HashiCorp, Inc.
+// SPDX-License-Identifier: MPL-2.0
+
 package kusto
 
 import (
 	"fmt"
 	"time"
 
-	"github.com/Azure/azure-sdk-for-go/services/kusto/mgmt/2022-02-01/kusto" // nolint: staticcheck
+	"github.com/hashicorp/go-azure-helpers/lang/response"
+	"github.com/hashicorp/go-azure-helpers/resourcemanager/commonids"
 	"github.com/hashicorp/go-azure-helpers/resourcemanager/commonschema"
 	"github.com/hashicorp/go-azure-helpers/resourcemanager/location"
-	"github.com/hashicorp/terraform-provider-azurerm/helpers/azure"
+	"github.com/hashicorp/go-azure-sdk/resource-manager/kusto/2024-04-13/attacheddatabaseconfigurations"
 	"github.com/hashicorp/terraform-provider-azurerm/helpers/tf"
 	"github.com/hashicorp/terraform-provider-azurerm/internal/clients"
+	"github.com/hashicorp/terraform-provider-azurerm/internal/features"
+	"github.com/hashicorp/terraform-provider-azurerm/internal/locks"
 	"github.com/hashicorp/terraform-provider-azurerm/internal/services/kusto/migration"
-	"github.com/hashicorp/terraform-provider-azurerm/internal/services/kusto/parse"
 	"github.com/hashicorp/terraform-provider-azurerm/internal/services/kusto/validate"
 	"github.com/hashicorp/terraform-provider-azurerm/internal/tf/pluginsdk"
 	"github.com/hashicorp/terraform-provider-azurerm/internal/tf/validation"
@@ -20,7 +25,7 @@ import (
 )
 
 func resourceKustoAttachedDatabaseConfiguration() *pluginsdk.Resource {
-	return &pluginsdk.Resource{
+	resource := &pluginsdk.Resource{
 		Create: resourceKustoAttachedDatabaseConfigurationCreateUpdate,
 		Read:   resourceKustoAttachedDatabaseConfigurationRead,
 		Update: resourceKustoAttachedDatabaseConfigurationCreateUpdate,
@@ -32,7 +37,7 @@ func resourceKustoAttachedDatabaseConfiguration() *pluginsdk.Resource {
 		}),
 
 		Importer: pluginsdk.ImporterValidatingResourceId(func(id string) error {
-			_, err := parse.AttachedDatabaseConfigurationID(id)
+			_, err := attacheddatabaseconfigurations.ParseAttachedDatabaseConfigurationID(id)
 			return err
 		}),
 
@@ -69,11 +74,11 @@ func resourceKustoAttachedDatabaseConfiguration() *pluginsdk.Resource {
 				ValidateFunc: validation.Any(validate.DatabaseName, validation.StringInSlice([]string{"*"}, false)),
 			},
 
-			"cluster_resource_id": {
+			"cluster_id": {
 				Type:         pluginsdk.TypeString,
 				Required:     true,
 				ForceNew:     true,
-				ValidateFunc: azure.ValidateResourceID,
+				ValidateFunc: commonids.ValidateKustoClusterID,
 			},
 
 			"attached_database_names": {
@@ -85,14 +90,10 @@ func resourceKustoAttachedDatabaseConfiguration() *pluginsdk.Resource {
 			},
 
 			"default_principal_modification_kind": {
-				Type:     pluginsdk.TypeString,
-				Optional: true,
-				Default:  kusto.DefaultPrincipalsModificationKindNone,
-				ValidateFunc: validation.StringInSlice([]string{
-					string(kusto.DefaultPrincipalsModificationKindNone),
-					string(kusto.DefaultPrincipalsModificationKindReplace),
-					string(kusto.DefaultPrincipalsModificationKindUnion),
-				}, false),
+				Type:         pluginsdk.TypeString,
+				Optional:     true,
+				Default:      attacheddatabaseconfigurations.DefaultPrincipalsModificationKindNone,
+				ValidateFunc: validation.StringInSlice(attacheddatabaseconfigurations.PossibleValuesForDefaultPrincipalsModificationKind(), false),
 			},
 
 			"sharing": {
@@ -153,6 +154,26 @@ func resourceKustoAttachedDatabaseConfiguration() *pluginsdk.Resource {
 			},
 		},
 	}
+
+	if !features.FivePointOh() {
+		resource.Schema["cluster_id"] = &pluginsdk.Schema{
+			Type:         pluginsdk.TypeString,
+			Optional:     true,
+			Computed:     true,
+			ExactlyOneOf: []string{"cluster_id", "cluster_resource_id"},
+			ValidateFunc: commonids.ValidateKustoClusterID,
+		}
+		resource.Schema["cluster_resource_id"] = &pluginsdk.Schema{
+			Type:         pluginsdk.TypeString,
+			Optional:     true,
+			Computed:     true,
+			ValidateFunc: commonids.ValidateKustoClusterID,
+			Deprecated:   "`cluster_resource_id` has been deprecated in favour of the `cluster_id` property and will be removed in v5.0 of the AzureRM Provider.",
+			ExactlyOneOf: []string{"cluster_id", "cluster_resource_id"},
+		}
+	}
+
+	return resource
 }
 
 func resourceKustoAttachedDatabaseConfigurationCreateUpdate(d *pluginsdk.ResourceData, meta interface{}) error {
@@ -161,32 +182,29 @@ func resourceKustoAttachedDatabaseConfigurationCreateUpdate(d *pluginsdk.Resourc
 	ctx, cancel := timeouts.ForCreateUpdate(meta.(*clients.Client).StopContext, d)
 	defer cancel()
 
-	id := parse.NewAttachedDatabaseConfigurationID(subscriptionId, d.Get("resource_group_name").(string), d.Get("cluster_name").(string), d.Get("name").(string))
+	id := attacheddatabaseconfigurations.NewAttachedDatabaseConfigurationID(subscriptionId, d.Get("resource_group_name").(string), d.Get("cluster_name").(string), d.Get("name").(string))
 	if d.IsNewResource() {
-		resp, err := client.Get(ctx, id.ResourceGroup, id.ClusterName, id.Name)
+		resp, err := client.Get(ctx, id)
 		if err != nil {
-			if !utils.ResponseWasNotFound(resp.Response) {
+			if !response.WasNotFound(resp.HttpResponse) {
 				return fmt.Errorf("checking for presence of existing %s: %+v", id, err)
 			}
 		}
 
-		if !utils.ResponseWasNotFound(resp.Response) {
+		if !response.WasNotFound(resp.HttpResponse) {
 			return tf.ImportAsExistsError("azurerm_kusto_attached_database_configuration", id.ID())
 		}
 	}
 
 	configurationProperties := expandKustoAttachedDatabaseConfigurationProperties(d)
-	configurationRequest := kusto.AttachedDatabaseConfiguration{
-		Location:                                utils.String(location.Normalize(d.Get("location").(string))),
-		AttachedDatabaseConfigurationProperties: configurationProperties,
+	configurationRequest := attacheddatabaseconfigurations.AttachedDatabaseConfiguration{
+		Location:   utils.String(location.Normalize(d.Get("location").(string))),
+		Properties: configurationProperties,
 	}
 
-	future, err := client.CreateOrUpdate(ctx, id.ResourceGroup, id.ClusterName, id.Name, configurationRequest)
+	err := client.CreateOrUpdateThenPoll(ctx, id, configurationRequest)
 	if err != nil {
 		return fmt.Errorf("creating/updating %s: %+v", id, err)
-	}
-	if err = future.WaitForCompletionRef(ctx, client.Client); err != nil {
-		return fmt.Errorf("waiting for creation/update of %s: %+v", id, err)
 	}
 
 	d.SetId(id.ID())
@@ -198,14 +216,14 @@ func resourceKustoAttachedDatabaseConfigurationRead(d *pluginsdk.ResourceData, m
 	ctx, cancel := timeouts.ForRead(meta.(*clients.Client).StopContext, d)
 	defer cancel()
 
-	id, err := parse.AttachedDatabaseConfigurationID(d.Id())
+	id, err := attacheddatabaseconfigurations.ParseAttachedDatabaseConfigurationID(d.Id())
 	if err != nil {
 		return err
 	}
 
-	resp, err := client.Get(ctx, id.ResourceGroup, id.ClusterName, id.Name)
+	resp, err := client.Get(ctx, *id)
 	if err != nil {
-		if utils.ResponseWasNotFound(resp.Response) {
+		if !response.WasNotFound(resp.HttpResponse) {
 			d.SetId("")
 			return nil
 		}
@@ -213,18 +231,28 @@ func resourceKustoAttachedDatabaseConfigurationRead(d *pluginsdk.ResourceData, m
 		return fmt.Errorf("retrieving %s: %+v", id, err)
 	}
 
-	d.Set("name", id.Name)
-	d.Set("resource_group_name", id.ResourceGroup)
+	d.Set("name", id.AttachedDatabaseConfigurationName)
+	d.Set("resource_group_name", id.ResourceGroupName)
 	d.Set("cluster_name", id.ClusterName)
 
-	d.Set("location", location.NormalizeNilable(resp.Location))
+	if model := resp.Model; model != nil {
+		d.Set("location", location.NormalizeNilable(model.Location))
 
-	if props := resp.AttachedDatabaseConfigurationProperties; props != nil {
-		d.Set("cluster_resource_id", props.ClusterResourceID)
-		d.Set("database_name", props.DatabaseName)
-		d.Set("default_principal_modification_kind", props.DefaultPrincipalsModificationKind)
-		d.Set("attached_database_names", props.AttachedDatabaseNames)
-		d.Set("sharing", flattenAttachedDatabaseConfigurationTableLevelSharingProperties(props.TableLevelSharingProperties))
+		if props := model.Properties; props != nil {
+			clusterResourceId, parseErr := commonids.ParseKustoClusterIDInsensitively(props.ClusterResourceId)
+			if parseErr != nil {
+				return parseErr
+			}
+			d.Set("cluster_id", clusterResourceId.ID())
+			d.Set("database_name", props.DatabaseName)
+			d.Set("default_principal_modification_kind", props.DefaultPrincipalsModificationKind)
+			d.Set("attached_database_names", props.AttachedDatabaseNames)
+			d.Set("sharing", flattenAttachedDatabaseConfigurationTableLevelSharingProperties(props.TableLevelSharingProperties))
+
+			if !features.FivePointOh() {
+				d.Set("cluster_resource_id", clusterResourceId.ID())
+			}
+		}
 	}
 
 	return nil
@@ -235,36 +263,41 @@ func resourceKustoAttachedDatabaseConfigurationDelete(d *pluginsdk.ResourceData,
 	ctx, cancel := timeouts.ForDelete(meta.(*clients.Client).StopContext, d)
 	defer cancel()
 
-	id, err := parse.AttachedDatabaseConfigurationID(d.Id())
+	id, err := attacheddatabaseconfigurations.ParseAttachedDatabaseConfigurationID(d.Id())
 	if err != nil {
 		return err
 	}
 
-	future, err := client.Delete(ctx, id.ResourceGroup, id.ClusterName, id.Name)
+	// DELETE operation for attached configuration does not support running concurrently at cluster level
+	locks.ByName(id.ClusterName, "azurerm_kusto_cluster")
+	defer locks.UnlockByName(id.ClusterName, "azurerm_kusto_cluster")
+
+	err = client.DeleteThenPoll(ctx, *id)
 	if err != nil {
 		return fmt.Errorf("deleting %s: %+v", id, err)
-	}
-
-	if err = future.WaitForCompletionRef(ctx, client.Client); err != nil {
-		return fmt.Errorf("waiting for deletion of %s: %+v", id, err)
 	}
 
 	return nil
 }
 
-func expandKustoAttachedDatabaseConfigurationProperties(d *pluginsdk.ResourceData) *kusto.AttachedDatabaseConfigurationProperties {
-	AttachedDatabaseConfigurationProperties := &kusto.AttachedDatabaseConfigurationProperties{}
+func expandKustoAttachedDatabaseConfigurationProperties(d *pluginsdk.ResourceData) *attacheddatabaseconfigurations.AttachedDatabaseConfigurationProperties {
+	AttachedDatabaseConfigurationProperties := &attacheddatabaseconfigurations.AttachedDatabaseConfigurationProperties{}
 
-	if clusterResourceID, ok := d.GetOk("cluster_resource_id"); ok {
-		AttachedDatabaseConfigurationProperties.ClusterResourceID = utils.String(clusterResourceID.(string))
+	if clusterResourceID, ok := d.GetOk("cluster_id"); ok {
+		AttachedDatabaseConfigurationProperties.ClusterResourceId = clusterResourceID.(string)
+	}
+	if !features.FivePointOh() {
+		if clusterResourceID, ok := d.GetOk("cluster_resource_id"); ok {
+			AttachedDatabaseConfigurationProperties.ClusterResourceId = clusterResourceID.(string)
+		}
 	}
 
 	if databaseName, ok := d.GetOk("database_name"); ok {
-		AttachedDatabaseConfigurationProperties.DatabaseName = utils.String(databaseName.(string))
+		AttachedDatabaseConfigurationProperties.DatabaseName = databaseName.(string)
 	}
 
 	if defaultPrincipalModificationKind, ok := d.GetOk("default_principal_modification_kind"); ok {
-		AttachedDatabaseConfigurationProperties.DefaultPrincipalsModificationKind = kusto.DefaultPrincipalsModificationKind(defaultPrincipalModificationKind.(string))
+		AttachedDatabaseConfigurationProperties.DefaultPrincipalsModificationKind = attacheddatabaseconfigurations.DefaultPrincipalsModificationKind(defaultPrincipalModificationKind.(string))
 	}
 
 	AttachedDatabaseConfigurationProperties.TableLevelSharingProperties = expandAttachedDatabaseConfigurationTableLevelSharingProperties(d.Get("sharing").([]interface{}))
@@ -272,12 +305,12 @@ func expandKustoAttachedDatabaseConfigurationProperties(d *pluginsdk.ResourceDat
 	return AttachedDatabaseConfigurationProperties
 }
 
-func expandAttachedDatabaseConfigurationTableLevelSharingProperties(input []interface{}) *kusto.TableLevelSharingProperties {
+func expandAttachedDatabaseConfigurationTableLevelSharingProperties(input []interface{}) *attacheddatabaseconfigurations.TableLevelSharingProperties {
 	if len(input) == 0 {
 		return nil
 	}
 	v := input[0].(map[string]interface{})
-	return &kusto.TableLevelSharingProperties{
+	return &attacheddatabaseconfigurations.TableLevelSharingProperties{
 		TablesToInclude:            utils.ExpandStringSlice(v["tables_to_include"].(*pluginsdk.Set).List()),
 		TablesToExclude:            utils.ExpandStringSlice(v["tables_to_exclude"].(*pluginsdk.Set).List()),
 		ExternalTablesToInclude:    utils.ExpandStringSlice(v["external_tables_to_include"].(*pluginsdk.Set).List()),
@@ -287,7 +320,7 @@ func expandAttachedDatabaseConfigurationTableLevelSharingProperties(input []inte
 	}
 }
 
-func flattenAttachedDatabaseConfigurationTableLevelSharingProperties(input *kusto.TableLevelSharingProperties) []interface{} {
+func flattenAttachedDatabaseConfigurationTableLevelSharingProperties(input *attacheddatabaseconfigurations.TableLevelSharingProperties) []interface{} {
 	if input == nil {
 		return make([]interface{}, 0)
 	}

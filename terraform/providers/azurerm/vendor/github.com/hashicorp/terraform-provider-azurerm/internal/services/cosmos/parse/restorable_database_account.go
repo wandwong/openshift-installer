@@ -1,8 +1,12 @@
+// Copyright (c) HashiCorp, Inc.
+// SPDX-License-Identifier: MPL-2.0
+
 package parse
 
 // NOTE: this file is generated via 'go:generate' - manual changes will be overwritten
 
 import (
+	"errors"
 	"fmt"
 	"strings"
 
@@ -41,7 +45,7 @@ func (id RestorableDatabaseAccountId) ID() string {
 func RestorableDatabaseAccountID(input string) (*RestorableDatabaseAccountId, error) {
 	id, err := resourceids.ParseAzureResourceID(input)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("parsing %q as an RestorableDatabaseAccount ID: %+v", input, err)
 	}
 
 	resourceId := RestorableDatabaseAccountId{
@@ -49,7 +53,7 @@ func RestorableDatabaseAccountID(input string) (*RestorableDatabaseAccountId, er
 	}
 
 	if resourceId.SubscriptionId == "" {
-		return nil, fmt.Errorf("ID was missing the 'subscriptions' element")
+		return nil, errors.New("ID was missing the 'subscriptions' element")
 	}
 
 	if resourceId.LocationName, err = id.PopSegment("locations"); err != nil {

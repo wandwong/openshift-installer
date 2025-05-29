@@ -1,3 +1,6 @@
+// Copyright (c) HashiCorp, Inc.
+// SPDX-License-Identifier: MPL-2.0
+
 package migration
 
 import (
@@ -25,7 +28,7 @@ func (CustomHttpsConfigurationV0ToV1) Schema() map[string]*pluginsdk.Schema {
 			Required: true,
 		},
 
-		//lintignore:XS003
+		// lintignore:XS003
 		"custom_https_configuration": {
 			Type:     pluginsdk.TypeList,
 			Optional: true,

@@ -1,3 +1,6 @@
+// Copyright (c) HashiCorp, Inc.
+// SPDX-License-Identifier: MPL-2.0
+
 package sdk
 
 import (
@@ -46,6 +49,19 @@ type DataSource interface {
 
 	// Read is a ResourceFunc which looks up and sets field values into the Terraform State
 	Read() ResourceFunc
+}
+
+// DataSourceWithDeprecationReplacedBy is an optional interface
+//
+// DataSource implementing this interface will be marked as Deprecated
+// and output the DeprecationMessage during Terraform operations.
+type DataSourceWithDeprecationReplacedBy interface {
+	DataSource
+
+	// nolint gocritic
+	// DeprecatedInFavourOfDataSource returns the name of the resource that this has been deprecated in favour of
+	// NOTE: this must return a non-empty string
+	DeprecatedInFavourOfDataSource() string
 }
 
 // A Resource is an object which can be provisioned and managed by Terraform
@@ -138,6 +154,15 @@ type ResourceWithCustomizeDiff interface {
 
 	// CustomizeDiff returns a ResourceFunc that runs the Custom Diff logic
 	CustomizeDiff() ResourceFunc
+}
+
+// ResourceWithConfigValidation is an optional interface
+// Resources implementing this interface will have a write-only attribute that requires
+// this specific validation
+type ResourceWithConfigValidation interface {
+	Resource
+
+	ValidateRawResourceConfig() []schema.ValidateRawResourceConfigFunc
 }
 
 // ResourceRunFunc is the function which can be run

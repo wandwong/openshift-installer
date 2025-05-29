@@ -1,8 +1,12 @@
+// Copyright (c) HashiCorp, Inc.
+// SPDX-License-Identifier: MPL-2.0
+
 package parse
 
 // NOTE: this file is generated via 'go:generate' - manual changes will be overwritten
 
 import (
+	"errors"
 	"fmt"
 	"strings"
 
@@ -44,6 +48,45 @@ func (id LoadBalancerBackendAddressPoolId) ID() string {
 func LoadBalancerBackendAddressPoolID(input string) (*LoadBalancerBackendAddressPoolId, error) {
 	id, err := resourceids.ParseAzureResourceID(input)
 	if err != nil {
+		return nil, fmt.Errorf("parsing %q as an LoadBalancerBackendAddressPool ID: %+v", input, err)
+	}
+
+	resourceId := LoadBalancerBackendAddressPoolId{
+		SubscriptionId: id.SubscriptionID,
+		ResourceGroup:  id.ResourceGroup,
+	}
+
+	if resourceId.SubscriptionId == "" {
+		return nil, errors.New("ID was missing the 'subscriptions' element")
+	}
+
+	if resourceId.ResourceGroup == "" {
+		return nil, errors.New("ID was missing the 'resourceGroups' element")
+	}
+
+	if resourceId.LoadBalancerName, err = id.PopSegment("loadBalancers"); err != nil {
+		return nil, err
+	}
+	if resourceId.BackendAddressPoolName, err = id.PopSegment("backendAddressPools"); err != nil {
+		return nil, err
+	}
+
+	if err := id.ValidateNoEmptySegments(input); err != nil {
+		return nil, err
+	}
+
+	return &resourceId, nil
+}
+
+// LoadBalancerBackendAddressPoolIDInsensitively parses an LoadBalancerBackendAddressPool ID into an LoadBalancerBackendAddressPoolId struct, insensitively
+// This should only be used to parse an ID for rewriting, the LoadBalancerBackendAddressPoolID
+// method should be used instead for validation etc.
+//
+// Whilst this may seem strange, this enables Terraform have consistent casing
+// which works around issues in Core, whilst handling broken API responses.
+func LoadBalancerBackendAddressPoolIDInsensitively(input string) (*LoadBalancerBackendAddressPoolId, error) {
+	id, err := resourceids.ParseAzureResourceID(input)
+	if err != nil {
 		return nil, err
 	}
 
@@ -53,17 +96,34 @@ func LoadBalancerBackendAddressPoolID(input string) (*LoadBalancerBackendAddress
 	}
 
 	if resourceId.SubscriptionId == "" {
-		return nil, fmt.Errorf("ID was missing the 'subscriptions' element")
+		return nil, errors.New("ID was missing the 'subscriptions' element")
 	}
 
 	if resourceId.ResourceGroup == "" {
-		return nil, fmt.Errorf("ID was missing the 'resourceGroups' element")
+		return nil, errors.New("ID was missing the 'resourceGroups' element")
 	}
 
-	if resourceId.LoadBalancerName, err = id.PopSegment("loadBalancers"); err != nil {
+	// find the correct casing for the 'loadBalancers' segment
+	loadBalancersKey := "loadBalancers"
+	for key := range id.Path {
+		if strings.EqualFold(key, loadBalancersKey) {
+			loadBalancersKey = key
+			break
+		}
+	}
+	if resourceId.LoadBalancerName, err = id.PopSegment(loadBalancersKey); err != nil {
 		return nil, err
 	}
-	if resourceId.BackendAddressPoolName, err = id.PopSegment("backendAddressPools"); err != nil {
+
+	// find the correct casing for the 'backendAddressPools' segment
+	backendAddressPoolsKey := "backendAddressPools"
+	for key := range id.Path {
+		if strings.EqualFold(key, backendAddressPoolsKey) {
+			backendAddressPoolsKey = key
+			break
+		}
+	}
+	if resourceId.BackendAddressPoolName, err = id.PopSegment(backendAddressPoolsKey); err != nil {
 		return nil, err
 	}
 

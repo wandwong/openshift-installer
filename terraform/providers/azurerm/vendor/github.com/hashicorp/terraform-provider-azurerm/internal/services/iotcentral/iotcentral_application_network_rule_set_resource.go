@@ -1,3 +1,6 @@
+// Copyright (c) HashiCorp, Inc.
+// SPDX-License-Identifier: MPL-2.0
+
 package iotcentral
 
 import (
@@ -19,9 +22,7 @@ import (
 
 type IotCentralApplicationNetworkRuleSetResource struct{}
 
-var (
-	_ sdk.ResourceWithUpdate = IotCentralApplicationNetworkRuleSetResource{}
-)
+var _ sdk.ResourceWithUpdate = IotCentralApplicationNetworkRuleSetResource{}
 
 type IotCentralApplicationNetworkRuleSetModel struct {
 	IotCentralApplicationId string             `tfschema:"iotcentral_application_id"`

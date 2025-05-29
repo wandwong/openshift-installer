@@ -1,8 +1,12 @@
+// Copyright (c) HashiCorp, Inc.
+// SPDX-License-Identifier: MPL-2.0
+
 package parse
 
 // NOTE: this file is generated via 'go:generate' - manual changes will be overwritten
 
 import (
+	"errors"
 	"fmt"
 	"strings"
 
@@ -38,7 +42,7 @@ func (id SubscriptionPolicyExemptionId) ID() string {
 func SubscriptionPolicyExemptionID(input string) (*SubscriptionPolicyExemptionId, error) {
 	id, err := resourceids.ParseAzureResourceID(input)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("parsing %q as an SubscriptionPolicyExemption ID: %+v", input, err)
 	}
 
 	resourceId := SubscriptionPolicyExemptionId{
@@ -46,7 +50,7 @@ func SubscriptionPolicyExemptionID(input string) (*SubscriptionPolicyExemptionId
 	}
 
 	if resourceId.SubscriptionId == "" {
-		return nil, fmt.Errorf("ID was missing the 'subscriptions' element")
+		return nil, errors.New("ID was missing the 'subscriptions' element")
 	}
 
 	if resourceId.PolicyExemptionName, err = id.PopSegment("policyExemptions"); err != nil {

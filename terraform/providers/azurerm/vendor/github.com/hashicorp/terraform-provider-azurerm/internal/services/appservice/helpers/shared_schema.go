@@ -1,13 +1,18 @@
+// Copyright (c) HashiCorp, Inc.
+// SPDX-License-Identifier: MPL-2.0
+
 package helpers
 
 import (
 	"fmt"
+	"math"
 	"strings"
 
-	"github.com/Azure/azure-sdk-for-go/services/web/mgmt/2021-03-01/web" // nolint: staticcheck
 	"github.com/hashicorp/go-azure-helpers/lang/pointer"
+	"github.com/hashicorp/go-azure-helpers/resourcemanager/commonids"
+	"github.com/hashicorp/go-azure-sdk/resource-manager/web/2023-12-01/webapps"
+	"github.com/hashicorp/terraform-plugin-sdk/v2/helper/schema"
 	"github.com/hashicorp/terraform-provider-azurerm/internal/services/appservice/validate"
-	networkValidate "github.com/hashicorp/terraform-provider-azurerm/internal/services/network/validate"
 	"github.com/hashicorp/terraform-provider-azurerm/internal/tf/pluginsdk"
 	"github.com/hashicorp/terraform-provider-azurerm/internal/tf/validation"
 	"github.com/hashicorp/terraform-provider-azurerm/utils"
@@ -18,9 +23,10 @@ type IpRestriction struct {
 	ServiceTag   string                 `tfschema:"service_tag"`
 	VnetSubnetId string                 `tfschema:"virtual_network_subnet_id"`
 	Name         string                 `tfschema:"name"`
-	Priority     int                    `tfschema:"priority"`
+	Priority     int64                  `tfschema:"priority"`
 	Action       string                 `tfschema:"action"`
 	Headers      []IpRestrictionHeaders `tfschema:"headers"`
+	Description  string                 `tfschema:"description"`
 }
 
 type IpRestrictionHeaders struct {
@@ -48,10 +54,8 @@ func (v IpRestriction) Validate() error {
 
 func IpRestrictionSchema() *pluginsdk.Schema {
 	return &pluginsdk.Schema{
-		Type:       pluginsdk.TypeList,
-		Optional:   true,
-		Computed:   true,
-		ConfigMode: pluginsdk.SchemaConfigModeAttr,
+		Type:     pluginsdk.TypeList,
+		Optional: true,
 		Elem: &pluginsdk.Resource{
 			Schema: map[string]*pluginsdk.Schema{
 				"ip_address": {
@@ -71,7 +75,7 @@ func IpRestrictionSchema() *pluginsdk.Schema {
 				"virtual_network_subnet_id": {
 					Type:         pluginsdk.TypeString,
 					Optional:     true,
-					ValidateFunc: networkValidate.SubnetID,
+					ValidateFunc: commonids.ValidateSubnetID,
 					Description:  "The Virtual Network Subnet ID used for this IP Restriction.",
 				},
 
@@ -87,7 +91,7 @@ func IpRestrictionSchema() *pluginsdk.Schema {
 					Type:         pluginsdk.TypeInt,
 					Optional:     true,
 					Default:      65000,
-					ValidateFunc: validation.IntBetween(1, 2147483647),
+					ValidateFunc: validation.IntBetween(1, math.MaxInt32),
 					Description:  "The priority value of this `ip_restriction`.",
 				},
 
@@ -103,6 +107,13 @@ func IpRestrictionSchema() *pluginsdk.Schema {
 				},
 
 				"headers": IpRestrictionHeadersSchema(),
+
+				"description": {
+					Type:         pluginsdk.TypeString,
+					Optional:     true,
+					ValidateFunc: validation.StringIsNotEmpty,
+					Description:  "The description of the IP restriction rule.",
+				},
 			},
 		},
 	}
@@ -152,6 +163,12 @@ func IpRestrictionSchemaComputed() *pluginsdk.Schema {
 				},
 
 				"headers": IpRestrictionHeadersSchemaComputed(),
+
+				"description": {
+					Type:        pluginsdk.TypeString,
+					Computed:    true,
+					Description: "The description of the ip restriction rule.",
+				},
 			},
 		},
 	}
@@ -269,11 +286,42 @@ func CorsSettingsSchema() *pluginsdk.Schema {
 		Type:     pluginsdk.TypeList,
 		Optional: true,
 		MaxItems: 1,
+		DiffSuppressFunc: func(k, _, _ string, d *schema.ResourceData) bool {
+			stateCors, planCors := d.GetChange("site_config.0.cors")
+			if stateCors == nil || planCors == nil {
+				return false
+			}
+			stateAttrs := stateCors.([]interface{})
+			planAttrs := planCors.([]interface{})
+
+			// Fixes https://github.com/hashicorp/terraform-provider-azurerm/issues/22879
+			// If the plan wants to set default values and the state is empty; suppress diff
+			if len(stateAttrs) == 0 && len(planAttrs) > 0 && planAttrs[0] != nil {
+				planAttr := planAttrs[0].(map[string]interface{})
+
+				newAllowedOrigins, ok := planAttr["allowed_origins"].(*schema.Set)
+				if !ok {
+					return false
+				}
+
+				newSupportCreds, ok := planAttr["support_credentials"].(bool)
+				if !ok {
+					return false
+				}
+
+				if newAllowedOrigins.Len() == 0 && !newSupportCreds {
+					return true
+				}
+			}
+
+			return false
+		},
 		Elem: &pluginsdk.Resource{
 			Schema: map[string]*pluginsdk.Schema{
 				"allowed_origins": {
 					Type:     pluginsdk.TypeSet,
-					Required: true,
+					Optional: true,
+					MinItems: 1,
 					Elem: &pluginsdk.Schema{
 						Type: pluginsdk.TypeString,
 					},
@@ -316,6 +364,34 @@ func CorsSettingsSchemaComputed() *pluginsdk.Schema {
 	}
 }
 
+func FlattenCorsSettings(input *webapps.CorsSettings) []CorsSetting {
+	if input == nil {
+		return []CorsSetting{}
+	}
+
+	cors := *input
+	if len(pointer.From(cors.AllowedOrigins)) == 0 && !pointer.From(cors.SupportCredentials) {
+		return []CorsSetting{}
+	}
+
+	return []CorsSetting{{
+		SupportCredentials: pointer.From(cors.SupportCredentials),
+		AllowedOrigins:     pointer.From(cors.AllowedOrigins),
+	}}
+}
+
+func ExpandCorsSettings(input []CorsSetting) *webapps.CorsSettings {
+	if len(input) != 1 {
+		return &webapps.CorsSettings{}
+	}
+	cors := input[0]
+
+	return &webapps.CorsSettings{
+		AllowedOrigins:     pointer.To(cors.AllowedOrigins),
+		SupportCredentials: pointer.To(cors.SupportCredentials),
+	}
+}
+
 type SourceControl struct {
 	RepoURL           string `tfschema:"repo_url"`
 	Branch            string `tfschema:"branch"`
@@ -331,13 +407,15 @@ type SiteCredential struct {
 
 func SiteCredentialSchema() *pluginsdk.Schema { // TODO - This can apparently be disabled as a security option for the service?
 	return &pluginsdk.Schema{
-		Type:     pluginsdk.TypeList,
-		Computed: true,
+		Type:      pluginsdk.TypeList,
+		Computed:  true,
+		Sensitive: true,
 		Elem: &pluginsdk.Resource{
 			Schema: map[string]*pluginsdk.Schema{
 				"name": {
 					Type:        pluginsdk.TypeString,
 					Computed:    true,
+					Sensitive:   true,
 					Description: "The Site Credentials Username used for publishing.",
 				},
 
@@ -355,7 +433,7 @@ func SiteCredentialSchema() *pluginsdk.Schema { // TODO - This can apparently be
 type AuthSettings struct {
 	Enabled                     bool                    `tfschema:"enabled"`
 	AdditionalLoginParameters   map[string]string       `tfschema:"additional_login_parameters"`
-	AllowedExternalRedirectUrls []string                `tfschema:"allowed_external_redirect_urls"`
+	AllowedExternalRedirectURLs []string                `tfschema:"allowed_external_redirect_urls"`
 	DefaultProvider             string                  `tfschema:"default_provider"`
 	Issuer                      string                  `tfschema:"issuer"`
 	RuntimeVersion              string                  `tfschema:"runtime_version"`
@@ -374,7 +452,6 @@ func AuthSettingsSchema() *pluginsdk.Schema {
 	return &pluginsdk.Schema{
 		Type:     pluginsdk.TypeList,
 		Optional: true,
-		Computed: true,
 		MaxItems: 1,
 		Elem: &pluginsdk.Resource{
 			Schema: map[string]*pluginsdk.Schema{
@@ -409,12 +486,12 @@ func AuthSettingsSchema() *pluginsdk.Schema {
 					Optional: true,
 					Computed: true, // Once set, cannot be unset
 					ValidateFunc: validation.StringInSlice([]string{
-						string(web.BuiltInAuthenticationProviderAzureActiveDirectory),
-						string(web.BuiltInAuthenticationProviderFacebook),
-						string(web.BuiltInAuthenticationProviderGithub),
-						string(web.BuiltInAuthenticationProviderGoogle),
-						string(web.BuiltInAuthenticationProviderMicrosoftAccount),
-						string(web.BuiltInAuthenticationProviderTwitter),
+						string(webapps.BuiltInAuthenticationProviderAzureActiveDirectory),
+						string(webapps.BuiltInAuthenticationProviderFacebook),
+						string(webapps.BuiltInAuthenticationProviderGithub),
+						string(webapps.BuiltInAuthenticationProviderGoogle),
+						string(webapps.BuiltInAuthenticationProviderMicrosoftAccount),
+						string(webapps.BuiltInAuthenticationProviderTwitter),
 					}, false),
 					Description: "The default authentication provider to use when multiple providers are configured. Possible values include: `AzureActiveDirectory`, `Facebook`, `Google`, `MicrosoftAccount`, `Twitter`, `Github`.",
 				},
@@ -452,8 +529,8 @@ func AuthSettingsSchema() *pluginsdk.Schema {
 					Optional: true,
 					Computed: true, // Once set, cannot be removed
 					ValidateFunc: validation.StringInSlice([]string{
-						string(web.UnauthenticatedClientActionAllowAnonymous),
-						string(web.UnauthenticatedClientActionRedirectToLoginPage),
+						string(webapps.UnauthenticatedClientActionAllowAnonymous),
+						string(webapps.UnauthenticatedClientActionRedirectToLoginPage),
 					}, false),
 					Description: "The action to take when an unauthenticated client attempts to access the app. Possible values include: `RedirectToLoginPage`, `AllowAnonymous`.",
 				},
@@ -1095,8 +1172,8 @@ func GithubAuthSettingsSchemaComputed() *pluginsdk.Schema {
 	}
 }
 
-func ExpandIpRestrictions(restrictions []IpRestriction) (*[]web.IPSecurityRestriction, error) {
-	var expanded []web.IPSecurityRestriction
+func ExpandIpRestrictions(restrictions []IpRestriction) (*[]webapps.IPSecurityRestriction, error) {
+	expanded := make([]webapps.IPSecurityRestriction, 0)
 	if len(restrictions) == 0 {
 		return &expanded, nil
 	}
@@ -1106,7 +1183,7 @@ func ExpandIpRestrictions(restrictions []IpRestriction) (*[]web.IPSecurityRestri
 			return nil, err
 		}
 
-		var restriction web.IPSecurityRestriction
+		var restriction webapps.IPSecurityRestriction
 		if v.Name != "" {
 			restriction.Name = utils.String(v.Name)
 		}
@@ -1117,16 +1194,20 @@ func ExpandIpRestrictions(restrictions []IpRestriction) (*[]web.IPSecurityRestri
 
 		if v.ServiceTag != "" {
 			restriction.IPAddress = utils.String(v.ServiceTag)
-			restriction.Tag = web.IPFilterTagServiceTag
+			restriction.Tag = pointer.To(webapps.IPFilterTagServiceTag)
 		}
 
 		if v.VnetSubnetId != "" {
-			restriction.VnetSubnetResourceID = utils.String(v.VnetSubnetId)
+			restriction.VnetSubnetResourceId = utils.String(v.VnetSubnetId)
 		}
 
-		restriction.Priority = utils.Int32(int32(v.Priority))
+		if v.Description != "" {
+			restriction.Description = pointer.To(v.Description)
+		}
 
-		restriction.Action = utils.String(v.Action)
+		restriction.Priority = pointer.To(v.Priority)
+
+		restriction.Action = pointer.To(v.Action)
 
 		restriction.Headers = expandIpRestrictionHeaders(v.Headers)
 
@@ -1136,10 +1217,10 @@ func ExpandIpRestrictions(restrictions []IpRestriction) (*[]web.IPSecurityRestri
 	return &expanded, nil
 }
 
-func expandIpRestrictionHeaders(headers []IpRestrictionHeaders) map[string][]string {
+func expandIpRestrictionHeaders(headers []IpRestrictionHeaders) *map[string][]string {
 	result := make(map[string][]string)
 	if len(headers) == 0 {
-		return result
+		return nil
 	}
 
 	for _, v := range headers {
@@ -1157,39 +1238,20 @@ func expandIpRestrictionHeaders(headers []IpRestrictionHeaders) map[string][]str
 		}
 	}
 
-	return result
-}
-
-func ExpandCorsSettings(input []CorsSetting) *web.CorsSettings {
-	if len(input) == 0 {
-		allowedOrigins := make([]string, 0)
-		return &web.CorsSettings{
-			AllowedOrigins:     &allowedOrigins,
-			SupportCredentials: pointer.To(false),
-		}
-	}
-	var result web.CorsSettings
-	for _, v := range input {
-		if v.SupportCredentials {
-			result.SupportCredentials = utils.Bool(v.SupportCredentials)
-		}
-
-		result.AllowedOrigins = &v.AllowedOrigins
-	}
 	return &result
 }
 
-func ExpandAuthSettings(auth []AuthSettings) *web.SiteAuthSettings {
-	result := &web.SiteAuthSettings{}
+func ExpandAuthSettings(auth []AuthSettings) *webapps.SiteAuthSettings {
+	result := &webapps.SiteAuthSettings{}
 	if len(auth) == 0 {
 		return result
 	}
 
-	props := &web.SiteAuthSettingsProperties{}
+	props := &webapps.SiteAuthSettingsProperties{}
 
 	v := auth[0]
 
-	props.Enabled = utils.Bool(v.Enabled)
+	props.Enabled = pointer.To(v.Enabled)
 
 	additionalLoginParams := make([]string, 0)
 	if len(v.AdditionalLoginParameters) > 0 {
@@ -1199,32 +1261,32 @@ func ExpandAuthSettings(auth []AuthSettings) *web.SiteAuthSettings {
 		props.AdditionalLoginParams = &additionalLoginParams
 	}
 
-	props.AllowedExternalRedirectUrls = &v.AllowedExternalRedirectUrls
+	props.AllowedExternalRedirectURLs = &v.AllowedExternalRedirectURLs
 
-	props.DefaultProvider = web.BuiltInAuthenticationProvider(v.DefaultProvider)
+	props.DefaultProvider = pointer.To(webapps.BuiltInAuthenticationProvider(v.DefaultProvider))
 
-	props.Issuer = utils.String(v.Issuer)
+	props.Issuer = pointer.To(v.Issuer)
 
-	props.RuntimeVersion = utils.String(v.RuntimeVersion)
+	props.RuntimeVersion = pointer.To(v.RuntimeVersion)
 
-	props.TokenStoreEnabled = utils.Bool(v.TokenStoreEnabled)
+	props.TokenStoreEnabled = pointer.To(v.TokenStoreEnabled)
 
-	props.TokenRefreshExtensionHours = utils.Float(v.TokenRefreshExtensionHours)
+	props.TokenRefreshExtensionHours = pointer.To(v.TokenRefreshExtensionHours)
 
-	props.UnauthenticatedClientAction = web.UnauthenticatedClientAction(v.UnauthenticatedClientAction)
+	props.UnauthenticatedClientAction = pointer.To(webapps.UnauthenticatedClientAction(v.UnauthenticatedClientAction))
 
 	a := AadAuthSettings{}
 	if len(v.AzureActiveDirectoryAuth) > 0 {
 		a = v.AzureActiveDirectoryAuth[0]
 	}
-	props.ClientID = utils.String(a.ClientId)
+	props.ClientId = pointer.To(a.ClientId)
 
 	if a.ClientSecret != "" {
-		props.ClientSecret = utils.String(a.ClientSecret)
+		props.ClientSecret = pointer.To(a.ClientSecret)
 	}
 
 	if a.ClientSecretSettingName != "" {
-		props.ClientSecretSettingName = utils.String(a.ClientSecretSettingName)
+		props.ClientSecretSettingName = pointer.To(a.ClientSecretSettingName)
 	}
 
 	props.AllowedAudiences = &a.AllowedAudiences
@@ -1233,18 +1295,18 @@ func ExpandAuthSettings(auth []AuthSettings) *web.SiteAuthSettings {
 	if len(v.FacebookAuth) > 0 {
 		f = v.FacebookAuth[0]
 	}
-	props.FacebookAppID = utils.String(f.AppId)
-	props.FacebookAppSecret = utils.String(f.AppSecret)
-	props.FacebookAppSecretSettingName = utils.String(f.AppSecretSettingName)
+	props.FacebookAppId = pointer.To(f.AppId)
+	props.FacebookAppSecret = pointer.To(f.AppSecret)
+	props.FacebookAppSecretSettingName = pointer.To(f.AppSecretSettingName)
 	props.FacebookOAuthScopes = &f.OauthScopes
 
 	gh := GithubAuthSettings{}
 	if len(v.GithubAuth) > 0 {
 		gh = v.GithubAuth[0]
 	}
-	props.GitHubClientID = utils.String(gh.ClientId)
-	props.GitHubClientSecret = utils.String(gh.ClientSecret)
-	props.GitHubClientSecretSettingName = utils.String(gh.ClientSecretSettingName)
+	props.GitHubClientId = pointer.To(gh.ClientId)
+	props.GitHubClientSecret = pointer.To(gh.ClientSecret)
+	props.GitHubClientSecretSettingName = pointer.To(gh.ClientSecretSettingName)
 	props.GitHubOAuthScopes = &gh.OAuthScopes
 
 	g := GoogleAuthSettings{}
@@ -1252,43 +1314,43 @@ func ExpandAuthSettings(auth []AuthSettings) *web.SiteAuthSettings {
 		g = v.GoogleAuth[0]
 	}
 
-	props.GoogleClientID = utils.String(g.ClientId)
-	props.GoogleClientSecret = utils.String(g.ClientSecret)
-	props.GoogleClientSecretSettingName = utils.String(g.ClientSecretSettingName)
+	props.GoogleClientId = pointer.To(g.ClientId)
+	props.GoogleClientSecret = pointer.To(g.ClientSecret)
+	props.GoogleClientSecretSettingName = pointer.To(g.ClientSecretSettingName)
 	props.GoogleOAuthScopes = &g.OauthScopes
 
 	m := MicrosoftAuthSettings{}
 	if len(v.MicrosoftAuth) > 0 {
 		m = v.MicrosoftAuth[0]
 	}
-	props.MicrosoftAccountClientID = utils.String(m.ClientId)
-	props.MicrosoftAccountClientSecret = utils.String(m.ClientSecret)
-	props.MicrosoftAccountClientSecretSettingName = utils.String(m.ClientSecretSettingName)
+	props.MicrosoftAccountClientId = pointer.To(m.ClientId)
+	props.MicrosoftAccountClientSecret = pointer.To(m.ClientSecret)
+	props.MicrosoftAccountClientSecretSettingName = pointer.To(m.ClientSecretSettingName)
 	props.MicrosoftAccountOAuthScopes = &m.OauthScopes
 
 	t := TwitterAuthSettings{}
 	if len(v.TwitterAuth) > 0 {
 		t = v.TwitterAuth[0]
 	}
-	props.TwitterConsumerKey = utils.String(t.ConsumerKey)
-	props.TwitterConsumerSecret = utils.String(t.ConsumerSecret)
-	props.TwitterConsumerSecretSettingName = utils.String(t.ConsumerSecretSettingName)
+	props.TwitterConsumerKey = pointer.To(t.ConsumerKey)
+	props.TwitterConsumerSecret = pointer.To(t.ConsumerSecret)
+	props.TwitterConsumerSecretSettingName = pointer.To(t.ConsumerSecretSettingName)
 
-	result.SiteAuthSettingsProperties = props
+	result.Properties = props
 
 	return result
 }
 
-func FlattenAuthSettings(auth web.SiteAuthSettings) []AuthSettings {
-	if auth.SiteAuthSettingsProperties == nil {
-		return nil
+func FlattenAuthSettings(auth *webapps.SiteAuthSettings) []AuthSettings {
+	if auth == nil || auth.Properties == nil || !pointer.From(auth.Properties.Enabled) || strings.ToLower(pointer.From(auth.Properties.ConfigVersion)) != "v1" {
+		return []AuthSettings{}
 	}
 
-	props := *auth.SiteAuthSettingsProperties
+	props := *auth.Properties
 
 	result := AuthSettings{
-		DefaultProvider:             string(props.DefaultProvider),
-		UnauthenticatedClientAction: string(props.UnauthenticatedClientAction),
+		DefaultProvider:             string(pointer.From(props.DefaultProvider)),
+		UnauthenticatedClientAction: string(pointer.From(props.UnauthenticatedClientAction)),
 	}
 
 	if props.Enabled != nil {
@@ -1308,10 +1370,10 @@ func FlattenAuthSettings(auth web.SiteAuthSettings) []AuthSettings {
 	}
 
 	var allowedRedirectUrls []string
-	if props.AllowedExternalRedirectUrls != nil {
-		allowedRedirectUrls = *props.AllowedExternalRedirectUrls
+	if props.AllowedExternalRedirectURLs != nil {
+		allowedRedirectUrls = *props.AllowedExternalRedirectURLs
 	}
-	result.AllowedExternalRedirectUrls = allowedRedirectUrls
+	result.AllowedExternalRedirectURLs = allowedRedirectUrls
 
 	if props.Issuer != nil {
 		result.Issuer = *props.Issuer
@@ -1330,9 +1392,9 @@ func FlattenAuthSettings(auth web.SiteAuthSettings) []AuthSettings {
 	}
 
 	// AAD Auth
-	if props.ClientID != nil {
+	if props.ClientId != nil {
 		aadAuthSettings := AadAuthSettings{
-			ClientId: *props.ClientID,
+			ClientId: *props.ClientId,
 		}
 
 		if props.ClientSecret != nil {
@@ -1350,9 +1412,9 @@ func FlattenAuthSettings(auth web.SiteAuthSettings) []AuthSettings {
 		result.AzureActiveDirectoryAuth = []AadAuthSettings{aadAuthSettings}
 	}
 
-	if props.FacebookAppID != nil {
+	if props.FacebookAppId != nil {
 		facebookAuthSettings := FacebookAuthSettings{
-			AppId: *props.FacebookAppID,
+			AppId: *props.FacebookAppId,
 		}
 
 		if props.FacebookAppSecret != nil {
@@ -1370,9 +1432,9 @@ func FlattenAuthSettings(auth web.SiteAuthSettings) []AuthSettings {
 		result.FacebookAuth = []FacebookAuthSettings{facebookAuthSettings}
 	}
 
-	if props.GitHubClientID != nil {
+	if props.GitHubClientId != nil {
 		githubAuthSetting := GithubAuthSettings{
-			ClientId: *props.GitHubClientID,
+			ClientId: *props.GitHubClientId,
 		}
 
 		if props.GitHubClientSecret != nil {
@@ -1386,9 +1448,9 @@ func FlattenAuthSettings(auth web.SiteAuthSettings) []AuthSettings {
 		result.GithubAuth = []GithubAuthSettings{githubAuthSetting}
 	}
 
-	if props.GoogleClientID != nil {
+	if props.GoogleClientId != nil {
 		googleAuthSettings := GoogleAuthSettings{
-			ClientId: *props.GoogleClientID,
+			ClientId: *props.GoogleClientId,
 		}
 
 		if props.GoogleClientSecret != nil {
@@ -1406,9 +1468,9 @@ func FlattenAuthSettings(auth web.SiteAuthSettings) []AuthSettings {
 		result.GoogleAuth = []GoogleAuthSettings{googleAuthSettings}
 	}
 
-	if props.MicrosoftAccountClientID != nil {
+	if props.MicrosoftAccountClientId != nil {
 		microsoftAuthSettings := MicrosoftAuthSettings{
-			ClientId: *props.MicrosoftAccountClientID,
+			ClientId: *props.MicrosoftAccountClientId,
 		}
 
 		if props.MicrosoftAccountClientSecret != nil {
@@ -1443,12 +1505,12 @@ func FlattenAuthSettings(auth web.SiteAuthSettings) []AuthSettings {
 	return []AuthSettings{result}
 }
 
-func FlattenIpRestrictions(ipRestrictionsList *[]web.IPSecurityRestriction) []IpRestriction {
+func FlattenIpRestrictions(ipRestrictionsList *[]webapps.IPSecurityRestriction) []IpRestriction {
 	if ipRestrictionsList == nil {
-		return nil
+		return []IpRestriction{}
 	}
 
-	var ipRestrictions []IpRestriction
+	ipRestrictions := make([]IpRestriction, 0, len(*ipRestrictionsList))
 	for _, v := range *ipRestrictionsList {
 		ipRestriction := IpRestriction{}
 
@@ -1461,26 +1523,29 @@ func FlattenIpRestrictions(ipRestrictionsList *[]web.IPSecurityRestriction) []Ip
 				continue
 			}
 
-			if v.Tag == web.IPFilterTagServiceTag {
+			if v.Tag != nil && *v.Tag == webapps.IPFilterTagServiceTag {
 				ipRestriction.ServiceTag = *v.IPAddress
 			} else {
 				ipRestriction.IpAddress = *v.IPAddress
 			}
 		}
 
-		if v.VnetSubnetResourceID != nil {
-			ipRestriction.VnetSubnetId = *v.VnetSubnetResourceID
+		if v.VnetSubnetResourceId != nil {
+			ipRestriction.VnetSubnetId = *v.VnetSubnetResourceId
 		}
 
 		if v.Priority != nil {
-			ipRestriction.Priority = int(*v.Priority)
+			ipRestriction.Priority = *v.Priority
 		}
 
 		if v.Action != nil {
 			ipRestriction.Action = *v.Action
 		}
 
-		ipRestriction.Headers = flattenIpRestrictionHeaders(v.Headers)
+		ipRestriction.Headers = flattenIpRestrictionHeaders(pointer.From(v.Headers))
+		if v.Description != nil {
+			ipRestriction.Description = *v.Description
+		}
 
 		ipRestrictions = append(ipRestrictions, ipRestriction)
 	}
@@ -1490,7 +1555,7 @@ func FlattenIpRestrictions(ipRestrictionsList *[]web.IPSecurityRestriction) []Ip
 
 func flattenIpRestrictionHeaders(headers map[string][]string) []IpRestrictionHeaders {
 	if len(headers) == 0 {
-		return nil
+		return []IpRestrictionHeaders{}
 	}
 	ipRestrictionHeader := IpRestrictionHeaders{}
 	if xForwardFor, ok := headers["x-forwarded-for"]; ok {
@@ -1512,25 +1577,26 @@ func flattenIpRestrictionHeaders(headers map[string][]string) []IpRestrictionHea
 	return []IpRestrictionHeaders{ipRestrictionHeader}
 }
 
-func FlattenWebStringDictionary(input web.StringDictionary) map[string]string {
+func FlattenWebStringDictionary(input *webapps.StringDictionary) map[string]string {
 	result := make(map[string]string)
-	for k, v := range input.Properties {
-		result[k] = utils.NormalizeNilableString(v)
+	if input != nil && input.Properties != nil {
+		for k, v := range *input.Properties {
+			result[k] = v
+		}
 	}
-
 	return result
 }
 
-func FlattenSiteCredentials(input web.User) []SiteCredential {
+func FlattenSiteCredentials(input *webapps.User) []SiteCredential {
 	var result []SiteCredential
-	if input.UserProperties == nil {
+	if input == nil || input.Properties == nil {
 		return result
 	}
 
-	userProps := *input.UserProperties
+	userProps := *input.Properties
 	result = append(result, SiteCredential{
-		Username: utils.NormalizeNilableString(userProps.PublishingUserName),
-		Password: utils.NormalizeNilableString(userProps.PublishingPassword),
+		Username: userProps.PublishingUserName,
+		Password: pointer.From(userProps.PublishingPassword),
 	})
 
 	return result
@@ -1606,18 +1672,18 @@ func StickySettingsComputedSchema() *pluginsdk.Schema {
 	}
 }
 
-func ExpandStickySettings(input []StickySettings) *web.SlotConfigNames {
+func ExpandStickySettings(input []StickySettings) *webapps.SlotConfigNames {
 	if len(input) == 0 {
 		return nil
 	}
 
-	return &web.SlotConfigNames{
+	return &webapps.SlotConfigNames{
 		AppSettingNames:       &input[0].AppSettingNames,
 		ConnectionStringNames: &input[0].ConnectionStringNames,
 	}
 }
 
-func FlattenStickySettings(input *web.SlotConfigNames) []StickySettings {
+func FlattenStickySettings(input *webapps.SlotConfigNames) []StickySettings {
 	result := StickySettings{}
 	if input == nil || (input.AppSettingNames == nil && input.ConnectionStringNames == nil) || (len(*input.AppSettingNames) == 0 && len(*input.ConnectionStringNames) == 0) {
 		return []StickySettings{}

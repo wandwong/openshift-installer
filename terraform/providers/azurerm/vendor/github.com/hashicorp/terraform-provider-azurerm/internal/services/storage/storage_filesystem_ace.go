@@ -1,9 +1,12 @@
+// Copyright (c) HashiCorp, Inc.
+// SPDX-License-Identifier: MPL-2.0
+
 package storage
 
 import (
 	"github.com/google/uuid"
 	"github.com/hashicorp/terraform-provider-azurerm/internal/tf/pluginsdk"
-	"github.com/tombuildsstuff/giovanni/storage/accesscontrol"
+	"github.com/jackofallops/giovanni/storage/accesscontrol"
 )
 
 func ExpandDataLakeGen2AceList(input []interface{}) (*accesscontrol.ACL, error) {

@@ -1,8 +1,12 @@
+// Copyright (c) HashiCorp, Inc.
+// SPDX-License-Identifier: MPL-2.0
+
 package parse
 
 // NOTE: this file is generated via 'go:generate' - manual changes will be overwritten
 
 import (
+	"errors"
 	"fmt"
 	"strings"
 
@@ -38,7 +42,7 @@ func (id AutoProvisioningSettingId) ID() string {
 func AutoProvisioningSettingID(input string) (*AutoProvisioningSettingId, error) {
 	id, err := resourceids.ParseAzureResourceID(input)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("parsing %q as an AutoProvisioningSetting ID: %+v", input, err)
 	}
 
 	resourceId := AutoProvisioningSettingId{
@@ -46,7 +50,7 @@ func AutoProvisioningSettingID(input string) (*AutoProvisioningSettingId, error)
 	}
 
 	if resourceId.SubscriptionId == "" {
-		return nil, fmt.Errorf("ID was missing the 'subscriptions' element")
+		return nil, errors.New("ID was missing the 'subscriptions' element")
 	}
 
 	if resourceId.Name, err = id.PopSegment("autoProvisioningSettings"); err != nil {
@@ -77,7 +81,7 @@ func AutoProvisioningSettingIDInsensitively(input string) (*AutoProvisioningSett
 	}
 
 	if resourceId.SubscriptionId == "" {
-		return nil, fmt.Errorf("ID was missing the 'subscriptions' element")
+		return nil, errors.New("ID was missing the 'subscriptions' element")
 	}
 
 	// find the correct casing for the 'autoProvisioningSettings' segment

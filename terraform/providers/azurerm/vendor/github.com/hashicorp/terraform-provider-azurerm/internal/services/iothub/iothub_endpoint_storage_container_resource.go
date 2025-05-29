@@ -1,3 +1,6 @@
+// Copyright (c) HashiCorp, Inc.
+// SPDX-License-Identifier: MPL-2.0
+
 package iothub
 
 import (
@@ -20,7 +23,7 @@ import (
 	"github.com/hashicorp/terraform-provider-azurerm/internal/tf/validation"
 	"github.com/hashicorp/terraform-provider-azurerm/internal/timeouts"
 	"github.com/hashicorp/terraform-provider-azurerm/utils"
-	devices "github.com/tombuildsstuff/kermit/sdk/iothub/2022-04-30-preview/iothub"
+	devices "github.com/jackofallops/kermit/sdk/iothub/2022-04-30-preview/iothub"
 )
 
 func resourceIotHubEndpointStorageContainer() *pluginsdk.Resource {
@@ -62,7 +65,7 @@ func resourceIothubEndpointStorageContainerSchema() map[string]*pluginsdk.Schema
 
 		"resource_group_name": commonschema.ResourceGroupName(),
 
-		//lintignore: S013
+		// lintignore: S013
 		"iothub_id": {
 			Type:         pluginsdk.TypeString,
 			Required:     true,
@@ -284,6 +287,10 @@ func resourceIotHubEndpointStorageContainerRead(d *pluginsdk.ResourceData, meta 
 
 	iothub, err := client.Get(ctx, id.ResourceGroup, id.IotHubName)
 	if err != nil {
+		if utils.ResponseWasNotFound(iothub.Response) {
+			d.SetId("")
+			return nil
+		}
 		return fmt.Errorf("loading IotHub %q (Resource Group %q): %+v", id.IotHubName, id.ResourceGroup, err)
 	}
 
@@ -293,13 +300,17 @@ func resourceIotHubEndpointStorageContainerRead(d *pluginsdk.ResourceData, meta 
 	d.Set("iothub_id", iotHubId.ID())
 
 	if iothub.Properties == nil || iothub.Properties.Routing == nil || iothub.Properties.Routing.Endpoints == nil {
+		d.SetId("")
 		return nil
 	}
+
+	exist := false
 
 	if endpoints := iothub.Properties.Routing.Endpoints.StorageContainers; endpoints != nil {
 		for _, endpoint := range *endpoints {
 			if existingEndpointName := endpoint.Name; existingEndpointName != nil {
 				if strings.EqualFold(*existingEndpointName, id.EndpointName) {
+					exist = true
 					d.Set("container_name", endpoint.ContainerName)
 					d.Set("file_name_format", endpoint.FileNameFormat)
 					d.Set("batch_frequency_in_seconds", endpoint.BatchFrequencyInSeconds)
@@ -333,6 +344,10 @@ func resourceIotHubEndpointStorageContainerRead(d *pluginsdk.ResourceData, meta 
 				}
 			}
 		}
+	}
+
+	if !exist {
+		d.SetId("")
 	}
 
 	return nil

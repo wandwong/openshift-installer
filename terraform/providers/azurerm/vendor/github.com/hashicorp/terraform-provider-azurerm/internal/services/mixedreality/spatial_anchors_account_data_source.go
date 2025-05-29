@@ -1,3 +1,6 @@
+// Copyright (c) HashiCorp, Inc.
+// SPDX-License-Identifier: MPL-2.0
+
 package mixedreality
 
 import (
@@ -19,6 +22,8 @@ import (
 func dataSourceSpatialAnchorsAccount() *pluginsdk.Resource {
 	return &pluginsdk.Resource{
 		Read: dataSourceSpatialAnchorsAccountRead,
+
+		DeprecationMessage: "The `azurerm_spatial_anchors_account` data source has been deprecated and will be removed in v5.0 of the AzureRM Provider",
 
 		Timeouts: &pluginsdk.ResourceTimeout{
 			Read: pluginsdk.DefaultTimeout(5 * time.Minute),

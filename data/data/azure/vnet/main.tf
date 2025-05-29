@@ -91,7 +91,57 @@ resource "azurerm_storage_account" "cluster" {
       identity_ids = [data.azurerm_user_assigned_identity.keyvault_identity[0].id]
     }
   }
+
+  network_rules {
+    default_action = "Deny"
+    # virtual_network_subnet_ids = [local.master_subnet_id, local.worker_subnet_id]
+    bypass = ["AzureServices"]
+  }
 }
+
+resource "azurerm_private_dns_zone" "private_dns_zone" {
+  name                = "privatelink.blob.core.windows.net"
+  resource_group_name = var.azure_network_resource_group_name
+}
+ 
+resource "azurerm_private_dns_zone_virtual_network_link" "vnet_link" {
+  name                  = "vnet-link"
+  resource_group_name   = var.azure_network_resource_group_name
+  private_dns_zone_name = azurerm_private_dns_zone.private_dns_zone.name
+  virtual_network_id    = local.virtual_network_id
+  registration_enabled  = true
+}
+
+resource "azurerm_private_endpoint" "private_endpoint" {
+  name                = "storage-endpoint"
+  location            = var.azure_region
+  resource_group_name = var.azure_network_resource_group_name
+  subnet_id           = local.master_subnet_id
+ 
+  private_service_connection {
+    name                           = "storage-endpoint-connection"
+    private_connection_resource_id = azurerm_storage_account.cluster.id
+    subresource_names              = ["blob"]
+    is_manual_connection           = false
+  }
+ 
+  private_dns_zone_group {
+    name                 = "storage-endpoint-connection"
+    private_dns_zone_ids = [azurerm_private_dns_zone.private_dns_zone.id]
+  }
+ 
+  depends_on = [azurerm_storage_account.cluster]
+}
+
+/* 
+resource "azurerm_private_dns_a_record" "cluster" {
+  name                = "cluster"
+  zone_name           = "privatelink.blob.core.windows.net"
+  resource_group_name = var.azure_network_resource_group_name
+  ttl                 = 300
+  records             = [azurerm_private_endpoint.private_endpoint.private_service_connection.0.private_ip_address]
+}
+*/
 
 resource "azurerm_user_assigned_identity" "main" {
   resource_group_name = data.azurerm_resource_group.main.name
@@ -114,19 +164,40 @@ resource "azurerm_role_assignment" "network" {
   principal_id         = azurerm_user_assigned_identity.main.principal_id
 }
 
+resource "time_sleep" "wait_60_seconds" {
+  depends_on      = [azurerm_private_endpoint.private_endpoint]
+  create_duration = "60s" 
+}
+
 # copy over the vhd to cluster resource group and create an image using that
+/*
 resource "azurerm_storage_container" "vhd" {
   name                 = "vhd"
   storage_account_name = azurerm_storage_account.cluster.name
+  depends_on           = [time_sleep.wait_60_seconds]
+}
+*/
+
+resource "azapi_resource" "vhd" {
+   type      = "Microsoft.Storage/storageAccounts/blobServices/containers@2024-01-01"
+   name      = "vhd"
+   parent_id = "${azurerm_storage_account.cluster.id}/blobServices/default"
+   body = {
+      properties = {
+      }
+   }
+   depends_on = [time_sleep.wait_60_seconds]
 }
 
 resource "azurerm_storage_blob" "rhcos_image" {
   name                   = "rhcos${var.random_storage_account_suffix}.vhd"
   storage_account_name   = azurerm_storage_account.cluster.name
-  storage_container_name = azurerm_storage_container.vhd.name
+  # storage_container_name = azurerm_storage_container.vhd.name
+  storage_container_name = azapi_resource.vhd.name
   type                   = "Page"
   source_uri             = var.azure_image_url
   metadata               = tomap({ source_uri = var.azure_image_url })
+  depends_on             = [time_sleep.wait_60_seconds]
 }
 
 # Creates Shared Image Gallery

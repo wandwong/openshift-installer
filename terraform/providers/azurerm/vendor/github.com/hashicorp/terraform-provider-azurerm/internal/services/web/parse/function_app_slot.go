@@ -1,8 +1,12 @@
+// Copyright (c) HashiCorp, Inc.
+// SPDX-License-Identifier: MPL-2.0
+
 package parse
 
 // NOTE: this file is generated via 'go:generate' - manual changes will be overwritten
 
 import (
+	"errors"
 	"fmt"
 	"strings"
 
@@ -44,7 +48,7 @@ func (id FunctionAppSlotId) ID() string {
 func FunctionAppSlotID(input string) (*FunctionAppSlotId, error) {
 	id, err := resourceids.ParseAzureResourceID(input)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("parsing %q as an FunctionAppSlot ID: %+v", input, err)
 	}
 
 	resourceId := FunctionAppSlotId{
@@ -53,11 +57,11 @@ func FunctionAppSlotID(input string) (*FunctionAppSlotId, error) {
 	}
 
 	if resourceId.SubscriptionId == "" {
-		return nil, fmt.Errorf("ID was missing the 'subscriptions' element")
+		return nil, errors.New("ID was missing the 'subscriptions' element")
 	}
 
 	if resourceId.ResourceGroup == "" {
-		return nil, fmt.Errorf("ID was missing the 'resourceGroups' element")
+		return nil, errors.New("ID was missing the 'resourceGroups' element")
 	}
 
 	if resourceId.SiteName, err = id.PopSegment("sites"); err != nil {
