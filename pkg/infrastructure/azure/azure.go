@@ -2,7 +2,9 @@ package azure
 
 import (
 	"context"
+	"crypto/sha256"
 	"fmt"
+	"path"
 	"math/rand"
 	"net/http"
 	"os"
@@ -16,6 +18,7 @@ import (
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/to"
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/compute/armcompute/v4"
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/network/armnetwork/v2"
+	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/privatedns/armprivatedns"
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/storage/armstorage"
 	"github.com/coreos/stream-metadata-go/arch"
 	"github.com/sirupsen/logrus"
@@ -212,8 +215,16 @@ func (p *Provider) InfraReady(ctx context.Context, in clusterapi.InfraReadyInput
 	var storageAccount *armstorage.Account
 	var storageClientFactory *armstorage.ClientFactory
 	var storageAccountKeys []armstorage.AccountKey
+	var privateEndpoint *armnetwork.PrivateEndpoint
+	var privateDnsZone *armprivatedns.PrivateZone
+	var virtualNetworkLink *armprivatedns.VirtualNetworkLink
+	var privateDnsZoneGroup *armnetwork.PrivateDNSZoneGroup
 
 	var createStorageAccountOutput *CreateStorageAccountOutput
+	var createPrivateEndpointOutput *CreatePrivateEndpointOutput
+	var createPrivateDnsZoneOutput *CreatePrivateDnsZoneOutput
+	var createVirtualNetworkLinkOutput *CreateVirtualNetworkLinkOutput
+	var createPrivateDnsZoneGroupOutput *CreatePrivateDnsZoneGroupOutput
 	if platform.CloudName != aztypes.StackCloud {
 		// Create storage account
 		createStorageAccountOutput, err = CreateStorageAccount(ctx, &CreateStorageAccountInput{
@@ -225,7 +236,12 @@ func (p *Provider) InfraReady(ctx context.Context, in clusterapi.InfraReadyInput
 			AuthType:           session.AuthType,
 			Tags:               tags,
 			CustomerManagedKey: platform.CustomerManagedKey,
-			TokenCredential:    tokenCredential,
+			PublicNetworkAccess:      platform.StoragePublicNetworkAccess, 
+			NetworkDefaultAction:     platform.StorageNetworkDefaultAction, 
+			NetworkResourceGroupName: platform.NetworkResourceGroupName, 
+			VirtualNetwork:           platform.VirtualNetworkName(in.InfraID), 
+			Subnet:                   platform.ControlPlaneSubnetName(in.InfraID), 
+		TokenCredential:    tokenCredential,
 			ClientOpts:         p.clientOptions,
 		})
 		if err != nil {
@@ -236,6 +252,83 @@ func (p *Provider) InfraReady(ctx context.Context, in clusterapi.InfraReadyInput
 		storageAccountKeys = createStorageAccountOutput.StorageAccountKeys
 
 		logrus.Debugf("StorageAccount.ID=%s", *storageAccount.ID)
+
+		if platform.StorageNetworkDefaultAction == "Deny" {
+			// Create private endpoint
+			storagePrivateEndpointName := platform.StoragePrivateEndpointName
+			hasher := sha256.New()
+			hasher.Write([]byte(time.Now().String()))
+			storagePrivateEndpointName += fmt.Sprintf("%x", hasher.Sum(nil))[:5]
+			createPrivateEndpointOutput, err = CreateStoragePrivateEndpoint(ctx, &CreatePrivateEndpointInput{
+				SubscriptionID:           subscriptionID,
+				ResourceGroupName:        resourceGroupName,
+				NetworkResourceGroupName: platform.NetworkResourceGroupName, 
+				Name:                     storagePrivateEndpointName, 
+				Region:                   platform.Region, 
+				StorageAccountID:         *storageAccount.ID, 
+				VirtualNetwork:           platform.VirtualNetworkName(in.InfraID), 
+				Subnet:                   platform.ControlPlaneSubnetName(in.InfraID), 
+				TokenCredential:          tokenCredential,
+				ClientOpts:               p.clientOptions,
+			})
+			if err != nil {
+				return err
+			}
+			privateEndpoint = createPrivateEndpointOutput.PrivateEndpoint
+			logrus.Debugf("PrivateEndpoint.ID=%s", *privateEndpoint.ID)
+
+			// making up the private dns zone name
+			storagePrivateDnsZone := platform.StoragePrivateDnsZone
+			if storagePrivateDnsZone == "" {
+				// storagePrivateDnsZone = "privatelink.blob." + installConfig.BaseDomain
+				storagePrivateDnsZone = "privatelink.blob.core.windows.net"
+			}
+
+			// Create private dns zone
+			createPrivateDnsZoneOutput, err = CreatePrivateDnsZone(ctx, &CreatePrivateDnsZoneInput{
+				SubscriptionID:           subscriptionID,
+				NetworkResourceGroupName: platform.NetworkResourceGroupName, 
+				PrivateDnsZoneName:       storagePrivateDnsZone, 
+				Region:                   platform.Region, 
+				TokenCredential:          tokenCredential,
+				ClientOpts:               p.clientOptions,
+			})
+			if err != nil {
+				return err
+			}
+			privateDnsZone = createPrivateDnsZoneOutput.PrivateZone
+			logrus.Debugf("PrivateDnsZone.ID=%s", *privateDnsZone.ID)
+
+			// Create vnet link
+			createVirtualNetworkLinkOutput, err = CreateVirtualNetworkLink(ctx, &CreateVirtualNetworkLinkInput{
+				SubscriptionID:           subscriptionID,
+				NetworkResourceGroupName: platform.NetworkResourceGroupName, 
+				PrivateDnsZoneName:       storagePrivateDnsZone, 
+				VirtualNetwork:           platform.VirtualNetworkName(in.InfraID), 
+				TokenCredential:          tokenCredential,
+				ClientOpts:               p.clientOptions,
+			})
+			if err != nil {
+				return err
+			}
+			virtualNetworkLink = createVirtualNetworkLinkOutput.VirtualNetworkLink
+			logrus.Debugf("VirtualNetworkLink.ID=%s", *virtualNetworkLink.ID)
+
+			// Create private dns zone group
+			createPrivateDnsZoneGroupOutput, err = CreatePrivateDnsZoneGroup(ctx, &CreatePrivateDnsZoneGroupInput{
+				SubscriptionID:           subscriptionID,
+				NetworkResourceGroupName: platform.NetworkResourceGroupName, 
+				PrivateEndpointName:      path.Base(*privateEndpoint.ID), 
+				PrivateDnsZoneName:       storagePrivateDnsZone, 
+				TokenCredential:          tokenCredential,
+				ClientOpts:               p.clientOptions,
+			})
+			if err != nil {
+				return err
+			}
+			privateDnsZoneGroup = createPrivateDnsZoneGroupOutput.PrivateDnsZoneGroup
+			logrus.Debugf("PrivateDnsZoneGroup.ID=%s", *privateDnsZoneGroup.ID)
+		}
 	}
 
 	// Upload the image to the container
