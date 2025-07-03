@@ -156,5 +156,12 @@ resource "azurerm_linux_virtual_machine" "master" {
     storage_account_uri = null # null enables managed storage account for boot diagnostics
   }
 
+  timeouts {
+    create = "2h"
+    read = "30m"
+    update = "2h"
+    delete = "2h"
+  }
+
   tags = var.azure_extra_tags
 }
