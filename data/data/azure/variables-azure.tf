@@ -132,6 +132,12 @@ variable "azure_preexisting_network" {
   description = "Specifies whether an existing network should be used or a new one created for installation."
 }
 
+variable "azure_preexisting_bastion_network" {
+  type        = bool
+  default     = false
+  description = "Specifies whether an existing network where the bastion resides."
+}
+
 variable "azure_resource_group_name" {
   type        = string
   description = <<EOF
@@ -150,6 +156,11 @@ variable "azure_virtual_network" {
   description = "The name of the virtual network, either existing or to be created."
 }
 
+variable "azure_bastion_virtual_network" {
+  type = string
+  description = "The name of the virtual network, where the bastion resides."
+}
+
 variable "azure_control_plane_subnet" {
   type = string
   description = "The name of the subnet for the control plane, either existing or to be created."
@@ -158,6 +169,11 @@ variable "azure_control_plane_subnet" {
 variable "azure_compute_subnet" {
   type = string
   description = "The name of the subnet for worker nodes, either existing or to be created"
+}
+
+variable "azure_bastion_subnet" {
+  type = string
+  description = "The name of the subnet for the bastion."
 }
 
 variable "azure_private" {

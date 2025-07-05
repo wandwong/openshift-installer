@@ -51,9 +51,12 @@ type config struct {
 	ResourceGroupName                       string            `json:"azure_resource_group_name"`
 	NetworkResourceGroupName                string            `json:"azure_network_resource_group_name"`
 	VirtualNetwork                          string            `json:"azure_virtual_network"`
+	BastionVirtualNetwork                   string            `json:"azure_bastion_virtual_network"`
 	ControlPlaneSubnet                      string            `json:"azure_control_plane_subnet"`
+	BastionSubnet                           string            `json:"azure_bastion_subnet"`
 	ComputeSubnet                           string            `json:"azure_compute_subnet"`
 	PreexistingNetwork                      bool              `json:"azure_preexisting_network"`
+	PreexistingBastionNetwork               bool              `json:"azure_preexisting_bastion_network"`
 	Private                                 bool              `json:"azure_private"`
 	OutboundType                            string            `json:"azure_outbound_routing_type"`
 	BootstrapIgnitionStub                   string            `json:"azure_bootstrap_ignition_stub"`
@@ -88,6 +91,7 @@ type TFVarsSources struct {
 	ImageURL                        string
 	ImageRelease                    string
 	PreexistingNetwork              bool
+	PreexistingBastionNetwork       bool
 	Publish                         types.PublishingStrategy
 	OutboundType                    azure.OutboundType
 	BootstrapIgnStub                string
@@ -188,9 +192,12 @@ func TFVars(sources TFVarsSources) ([]byte, error) {
 		BaseDomainResourceGroupName:             sources.BaseDomainResourceGroupName,
 		NetworkResourceGroupName:                masterConfig.NetworkResourceGroup,
 		VirtualNetwork:                          masterConfig.Vnet,
+		BastionVirtualNetwork:                   sources.BastionVirtualNetwork, 
 		ControlPlaneSubnet:                      masterConfig.Subnet,
 		ComputeSubnet:                           workerConfig.Subnet,
+		BastionSubnet:                           sources.BastionSubnet, 
 		PreexistingNetwork:                      sources.PreexistingNetwork,
+		PreexistingBastionNetwork:               sources.PreexistingBastionNetwork,
 		BootstrapIgnitionStub:                   sources.BootstrapIgnStub,
 		BootstrapIgnitionURLPlaceholder:         sources.BootstrapIgnitionURLPlaceholder,
 		HyperVGeneration:                        sources.HyperVGeneration,

@@ -383,6 +383,7 @@ func (t *TerraformVariables) Generate(parents asset.Parents) error {
 		}
 
 		preexistingnetwork := installConfig.Config.Azure.VirtualNetwork != ""
+		preexistingbastionnetwork := installConfig.Config.Azure.BastionVirtualNetwork != ""
 
 		var bootstrapIgnStub, bootstrapIgnURLPlaceholder string
 		if installConfig.Azure.CloudName == azure.StackCloud {
@@ -423,6 +424,7 @@ func (t *TerraformVariables) Generate(parents asset.Parents) error {
 				ImageURL:                        string(*rhcosImage),
 				ImageRelease:                    rhcosRelease.GetAzureReleaseVersion(),
 				PreexistingNetwork:              preexistingnetwork,
+				PreexistingBastionNetwork:       preexistingbastionnetwork, 
 				Publish:                         installConfig.Config.Publish,
 				OutboundType:                    installConfig.Config.Azure.OutboundType,
 				BootstrapIgnStub:                bootstrapIgnStub,

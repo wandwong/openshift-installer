@@ -17,11 +17,26 @@ data "azurerm_subnet" "preexisting_worker_subnet" {
   name                 = var.azure_compute_subnet
 }
 
+data "azurerm_subnet" "preexisting_bastion_subnet" {
+  count = var.azure_preexisting_bastion_network ? 1 : 0
+
+  resource_group_name  = var.azure_base_domain_resource_group_name
+  virtual_network_name = var.azure_bastion_virtual_network
+  name                 = var.azure_bastion_subnet
+}
+
 data "azurerm_virtual_network" "preexisting_virtual_network" {
   count = var.azure_preexisting_network ? 1 : 0
 
   resource_group_name = var.azure_network_resource_group_name
   name                = var.azure_virtual_network
+}
+
+data "azurerm_virtual_network" "preexisting_bastion_virtual_network" {
+  count = var.azure_preexisting_bastion_network ? 1 : 0
+
+  resource_group_name = var.azure_base_domain_resource_group_name
+  name                = var.azure_bastion_virtual_network
 }
 
 // Only reference data sources which are guaranteed to exist at any time (above) in this locals{} block
@@ -34,7 +49,11 @@ locals {
 
   master_subnet_id = var.azure_preexisting_network ? data.azurerm_subnet.preexisting_master_subnet[0].id : azurerm_subnet.master_subnet[0].id
   worker_subnet_id = var.azure_preexisting_network ? data.azurerm_subnet.preexisting_worker_subnet[0].id : azurerm_subnet.worker_subnet[0].id
+  bastion_subnet_id = var.azure_preexisting_bastion_network ? data.azurerm_subnet.preexisting_bastion_subnet[0].id : azurerm_subnet.master_subnet[0].id
 
   virtual_network    = var.azure_preexisting_network ? data.azurerm_virtual_network.preexisting_virtual_network[0].name : azurerm_virtual_network.cluster_vnet[0].name
   virtual_network_id = var.azure_preexisting_network ? data.azurerm_virtual_network.preexisting_virtual_network[0].id : azurerm_virtual_network.cluster_vnet[0].id
+
+  bastion_virtual_network    = var.azure_preexisting_bastion_network ? data.azurerm_virtual_network.preexisting_bastion_virtual_network[0].name : azurerm_virtual_network.cluster_vnet[0].name
+  bastion_virtual_network_id = var.azure_preexisting_bastion_network ? data.azurerm_virtual_network.preexisting_bastion_virtual_network[0].id : azurerm_virtual_network.cluster_vnet[0].id
 }

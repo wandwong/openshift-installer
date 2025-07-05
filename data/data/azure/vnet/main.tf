@@ -38,6 +38,10 @@ data "azurerm_resource_group" "main" {
   depends_on = [azurerm_resource_group.main]
 }
 
+data "azurerm_resource_group" "base_domain" {
+  name = var.azure_base_domain_resource_group_name
+}
+
 data "azurerm_resource_group" "network" {
   count = var.azure_preexisting_network ? 1 : 0
 
@@ -99,6 +103,11 @@ resource "azurerm_storage_account" "cluster" {
   }
 }
 
+resource "azurerm_private_dns_zone" "private_dns_zone_based" {
+  name                = "privatelink-${var.cluster_id}.blob.core.windows.net"
+  resource_group_name = var.azure_base_domain_resource_group_name
+}
+ 
 resource "azurerm_private_dns_zone" "private_dns_zone" {
   name                = "privatelink.blob.core.windows.net"
   resource_group_name = var.azure_network_resource_group_name
@@ -109,6 +118,16 @@ resource "azurerm_private_dns_zone_virtual_network_link" "vnet_link" {
   resource_group_name   = var.azure_network_resource_group_name
   private_dns_zone_name = azurerm_private_dns_zone.private_dns_zone.name
   virtual_network_id    = local.virtual_network_id
+  registration_enabled  = true
+}
+
+resource "azurerm_private_dns_zone_virtual_network_link" "bastion_vnet_link" {
+  count = var.azure_preexisting_bastion_network ? 1 : 0
+
+  name                  = "bastion-vnet-link"
+  resource_group_name   = var.azure_base_domain_resource_group_name
+  private_dns_zone_name = azurerm_private_dns_zone.private_dns_zone_based.name
+  virtual_network_id    = local.bastion_virtual_network_id
   registration_enabled  = true
 }
 
@@ -128,6 +147,27 @@ resource "azurerm_private_endpoint" "private_endpoint" {
   private_dns_zone_group {
     name                 = "storage-endpoint-connection"
     private_dns_zone_ids = [azurerm_private_dns_zone.private_dns_zone.id]
+  }
+ 
+  depends_on = [azurerm_storage_account.cluster]
+}
+
+resource "azurerm_private_endpoint" "bastion_private_endpoint" {
+  name                = "bastion-storage-endpoint"
+  location            = var.azure_region
+  resource_group_name = var.azure_base_domain_resource_group_name
+  subnet_id           = local.bastion_subnet_id
+ 
+  private_service_connection {
+    name                           = "bastion-storage-endpoint-connection"
+    private_connection_resource_id = azurerm_storage_account.cluster.id
+    subresource_names              = ["blob"]
+    is_manual_connection           = false
+  }
+ 
+  private_dns_zone_group {
+    name                 = "bastion-storage-endpoint-connection"
+    private_dns_zone_ids = [azurerm_private_dns_zone.private_dns_zone_based.id]
   }
  
   depends_on = [azurerm_storage_account.cluster]

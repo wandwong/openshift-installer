@@ -2386,6 +2386,11 @@ spec:
                     description: ControlPlaneSubnet specifies an existing subnet for
                       use by the control plane nodes
                     type: string
+                  bastionSubnet:
+                    default: default
+                    description: BastionSubnet specifies an existing subnet for
+                      use by the bastion
+                    type: string
                   customerManagedKey:
                     description: CustomerManagedKey has the keys needed to encrypt
                       the storage account.
@@ -2705,6 +2710,10 @@ spec:
                   virtualNetwork:
                     description: VirtualNetwork specifies the name of an existing
                       VNet for the installer to use
+                    type: string
+                  bastionVirtualNetwork:
+                    description: BastionVirtualNetwork specifies the name of an existing
+                      VNet that the bastion (and the base domain DNS zone) resides
                     type: string
                 required:
                 - region
