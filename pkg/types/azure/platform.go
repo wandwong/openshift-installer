@@ -59,6 +59,11 @@ type Platform struct {
 	// +optional
 	VirtualNetwork string `json:"virtualNetwork,omitempty"`
 
+	// BastionVirtualNetwork specifies the name of an existing VNet for the bastion
+	//
+	// +optional
+	BastionVirtualNetwork string `json:"bastionVirtualNetwork,omitempty"`
+
 	// ControlPlaneSubnet specifies an existing subnet for use by the control plane nodes
 	//
 	// +optional
@@ -68,6 +73,11 @@ type Platform struct {
 	//
 	// +optional
 	ComputeSubnet string `json:"computeSubnet,omitempty"`
+
+	// BastionSubnet specifies an existing subnet for use by bastion
+	//
+	// +optional
+	BastionSubnet string `json:"bastionSubnet,omitempty"`
 
 	// cloudName is the name of the Azure cloud environment which can be used to configure the Azure SDK
 	// with the appropriate Azure API endpoints.
