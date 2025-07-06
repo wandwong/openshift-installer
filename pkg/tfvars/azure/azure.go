@@ -88,6 +88,8 @@ type TFVarsSources struct {
 	BaseDomainResourceGroupName     string
 	MasterConfigs                   []*machineapi.AzureMachineProviderSpec
 	WorkerConfigs                   []*machineapi.AzureMachineProviderSpec
+	BastionVirtualNetwork           string
+	BastionSubnet                   string
 	ImageURL                        string
 	ImageRelease                    string
 	PreexistingNetwork              bool
