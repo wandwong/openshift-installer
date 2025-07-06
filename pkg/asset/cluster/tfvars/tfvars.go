@@ -419,6 +419,8 @@ func (t *TerraformVariables) Generate(parents asset.Parents) error {
 				ARMEndpoint:                     installConfig.Config.Azure.ARMEndpoint,
 				ResourceGroupName:               installConfig.Config.Azure.ResourceGroupName,
 				BaseDomainResourceGroupName:     installConfig.Config.Azure.BaseDomainResourceGroupName,
+				BastionVirtualNetwork:           installConfig.Config.Azure.BastionVirtualNetwork, 
+				BastionSubnet:                   installConfig.Config.Azure.BastionSubnet, 
 				MasterConfigs:                   masterConfigs,
 				WorkerConfigs:                   workerConfigs,
 				ImageURL:                        string(*rhcosImage),
