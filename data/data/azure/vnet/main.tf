@@ -104,6 +104,8 @@ resource "azurerm_storage_account" "cluster" {
 }
 
 resource "azurerm_private_dns_zone" "private_dns_zone_based" {
+  count = var.azure_preexisting_bastion_network ? 1 : 0
+
   name                = "privatelink-${var.cluster_id}.blob.core.windows.net"
   resource_group_name = var.azure_base_domain_resource_group_name
 }
@@ -153,6 +155,8 @@ resource "azurerm_private_endpoint" "private_endpoint" {
 }
 
 resource "azurerm_private_endpoint" "bastion_private_endpoint" {
+  count = var.azure_preexisting_bastion_network ? 1 : 0
+
   name                = "bastion-storage-endpoint"
   location            = var.azure_region
   resource_group_name = var.azure_base_domain_resource_group_name
