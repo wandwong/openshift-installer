@@ -187,6 +187,16 @@ resource "azurerm_private_dns_a_record" "cluster" {
 }
 */
 
+resource "azurerm_private_dns_a_record" "cluster-bastion" {
+  count = var.azure_preexisting_bastion_network ? 1 : 0
+
+  name                = "cluster-bastion"
+  zone_name           = "privatelink-${var.cluster_id}.blob.core.windows.net"
+  resource_group_name = var.azure_base_domain_resource_group_name
+  ttl                 = 300
+  records             = [azurerm_private_endpoint.private_endpoint.private_service_connection.0.private_ip_address]
+}
+
 resource "azurerm_user_assigned_identity" "main" {
   resource_group_name = data.azurerm_resource_group.main.name
   location            = data.azurerm_resource_group.main.location
