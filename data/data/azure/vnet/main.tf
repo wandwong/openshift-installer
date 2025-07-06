@@ -128,7 +128,7 @@ resource "azurerm_private_dns_zone_virtual_network_link" "bastion_vnet_link" {
 
   name                  = "bastion-vnet-link"
   resource_group_name   = var.azure_base_domain_resource_group_name
-  private_dns_zone_name = azurerm_private_dns_zone.private_dns_zone_based.name
+  private_dns_zone_name = azurerm_private_dns_zone.private_dns_zone_based[0].name
   virtual_network_id    = local.bastion_virtual_network_id
   registration_enabled  = true
 }
@@ -171,7 +171,7 @@ resource "azurerm_private_endpoint" "bastion_private_endpoint" {
  
   private_dns_zone_group {
     name                 = "bastion-storage-endpoint-connection"
-    private_dns_zone_ids = [azurerm_private_dns_zone.private_dns_zone_based.id]
+    private_dns_zone_ids = [azurerm_private_dns_zone.private_dns_zone_based[0].id]
   }
  
   depends_on = [azurerm_storage_account.cluster]
