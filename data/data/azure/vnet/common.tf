@@ -26,7 +26,7 @@ data "azurerm_virtual_network" "preexisting_virtual_network" {
 
 data "azurerm_private_dns_zone" "private_dns_zone" {
   name                = "privatelink.blob.core.windows.net"
-  resource_group_name = var.azure_base_domain_resource_group_name
+  resource_group_name = var.azure_network_resource_group_name
 }
  
 // Only reference data sources which are guaranteed to exist at any time (above) in this locals{} block

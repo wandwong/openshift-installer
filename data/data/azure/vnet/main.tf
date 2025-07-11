@@ -102,7 +102,7 @@ resource "azurerm_storage_account" "cluster" {
 /*
 resource "azurerm_private_dns_zone" "private_dns_zone" {
   name                = "privatelink.blob.core.windows.net"
-  resource_group_name = var.azure_base_domain_resource_group_name
+  resource_group_name = var.azure_network_resource_group_name
 }
 */
  
