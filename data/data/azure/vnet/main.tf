@@ -111,7 +111,7 @@ resource "azurerm_private_dns_zone_virtual_network_link" "vnet_link" {
   resource_group_name   = var.azure_network_resource_group_name
   private_dns_zone_name = data.azurerm_private_dns_zone.private_dns_zone.name
   virtual_network_id    = local.virtual_network_id
-  registration_enabled  = true
+  registration_enabled  = false
 }
 
 resource "azurerm_private_endpoint" "private_endpoint" {
@@ -135,15 +135,13 @@ resource "azurerm_private_endpoint" "private_endpoint" {
   depends_on = [azurerm_storage_account.cluster]
 }
 
-/* 
 resource "azurerm_private_dns_a_record" "cluster" {
-  name                = "cluster"
+  name                = azurerm_storage_account.cluster.name
   zone_name           = "privatelink.blob.core.windows.net"
   resource_group_name = var.azure_network_resource_group_name
   ttl                 = 300
   records             = [azurerm_private_endpoint.private_endpoint.private_service_connection.0.private_ip_address]
 }
-*/
 
 resource "azurerm_user_assigned_identity" "main" {
   resource_group_name = data.azurerm_resource_group.main.name
