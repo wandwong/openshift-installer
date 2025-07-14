@@ -24,11 +24,6 @@ data "azurerm_virtual_network" "preexisting_virtual_network" {
   name                = var.azure_virtual_network
 }
 
-data "azurerm_private_dns_zone" "private_dns_zone" {
-  name                = "privatelink.blob.core.windows.net"
-  resource_group_name = var.azure_network_resource_group_name
-}
- 
 // Only reference data sources which are guaranteed to exist at any time (above) in this locals{} block
 locals {
   master_subnet_cidr_v4 = var.use_ipv4 ? cidrsubnet(var.machine_v4_cidrs[0], 1, 0) : null  #master subnet is a smaller subnet within the vnet. i.e from /16 to /17
@@ -42,4 +37,17 @@ locals {
 
   virtual_network    = var.azure_preexisting_network ? data.azurerm_virtual_network.preexisting_virtual_network[0].name : azurerm_virtual_network.cluster_vnet[0].name
   virtual_network_id = var.azure_preexisting_network ? data.azurerm_virtual_network.preexisting_virtual_network[0].id : azurerm_virtual_network.cluster_vnet[0].id
+}
+
+data "azurerm_private_dns_zone" "private_dns_zone" {
+  name                = "privatelink.blob.core.windows.net"
+  resource_group_name = var.azure_network_resource_group_name
+}
+
+data "azurerm_private_dns_zone_virtual_network_link" "vnet_link" {
+  name                  = "36096-agai-nprd-vnet-link"
+  resource_group_name   = var.azure_network_resource_group_name
+  private_dns_zone_name = data.azurerm_private_dns_zone.private_dns_zone.name
+  virtual_network_id    = local.virtual_network_id
+  registration_enabled  = false
 }

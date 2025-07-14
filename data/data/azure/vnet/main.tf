@@ -105,7 +105,8 @@ resource "azurerm_private_dns_zone" "private_dns_zone" {
   resource_group_name = var.azure_network_resource_group_name
 }
 */
- 
+
+/* 
 resource "azurerm_private_dns_zone_virtual_network_link" "vnet_link" {
   name                  = "vnet-link"
   resource_group_name   = var.azure_network_resource_group_name
@@ -113,6 +114,7 @@ resource "azurerm_private_dns_zone_virtual_network_link" "vnet_link" {
   virtual_network_id    = local.virtual_network_id
   registration_enabled  = false
 }
+*/
 
 resource "azurerm_private_endpoint" "private_endpoint" {
   name                = "storage-endpoint"
