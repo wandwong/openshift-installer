@@ -133,10 +133,24 @@ resource "azurerm_private_endpoint" "private_endpoint" {
     name                 = "storage-endpoint-connection"
     private_dns_zone_ids = [data.azurerm_private_dns_zone.private_dns_zone.id]
   }
+
+  /*
+  private_dns_zone_configs {
+    name = "storage-endpoint-dns-zone-config"
+    private_dns_zone_id = data.azurerm_private_dns_zone.private_dns_zone.id
+    record_sets {
+      name         = azurerm_storage_account.cluster.name
+      type         = "A"
+      ttl          = 300
+      ip_addresses = [azurerm_private_endpoint.private_endpoint.private_service_connection.0.private_ip_address]
+    }
+  }
+  */
  
   depends_on = [azurerm_storage_account.cluster]
 }
 
+/*
 resource "azurerm_private_dns_a_record" "cluster" {
   name                = azurerm_storage_account.cluster.name
   zone_name           = data.azurerm_private_dns_zone.private_dns_zone.name
@@ -144,6 +158,7 @@ resource "azurerm_private_dns_a_record" "cluster" {
   ttl                 = 300
   records             = [azurerm_private_endpoint.private_endpoint.private_service_connection.0.private_ip_address]
 }
+*/
 
 resource "azurerm_user_assigned_identity" "main" {
   resource_group_name = data.azurerm_resource_group.main.name
