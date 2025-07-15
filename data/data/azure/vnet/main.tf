@@ -119,7 +119,7 @@ resource "azurerm_private_dns_zone_virtual_network_link" "vnet_link" {
 resource "azurerm_private_endpoint" "private_endpoint" {
   name                = "storage-endpoint"
   location            = var.azure_region
-  resource_group_name = var.azure_network_resource_group_name
+  resource_group_name = data.azurerm_resource_group.main.name
   subnet_id           = local.master_subnet_id
  
   private_service_connection {
