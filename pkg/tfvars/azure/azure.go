@@ -56,6 +56,7 @@ type config struct {
 	PreexistingNetwork                      bool              `json:"azure_preexisting_network"`
 	Private                                 bool              `json:"azure_private"`
 	OutboundType                            string            `json:"azure_outbound_routing_type"`
+	PrivateDnsZoneVirtualNetworkLink        string            `json:"azure_private_dns_zone_virtual_network_link"`
 	BootstrapIgnitionStub                   string            `json:"azure_bootstrap_ignition_stub"`
 	BootstrapIgnitionURLPlaceholder         string            `json:"azure_bootstrap_ignition_url_placeholder"`
 	HyperVGeneration                        string            `json:"azure_hypervgeneration_version"`
@@ -90,6 +91,7 @@ type TFVarsSources struct {
 	PreexistingNetwork              bool
 	Publish                         types.PublishingStrategy
 	OutboundType                    azure.OutboundType
+	PrivateDnsZoneVirtualNetworkLink string
 	BootstrapIgnStub                string
 	BootstrapIgnitionURLPlaceholder string
 	HyperVGeneration                string
@@ -191,6 +193,7 @@ func TFVars(sources TFVarsSources) ([]byte, error) {
 		ControlPlaneSubnet:                      masterConfig.Subnet,
 		ComputeSubnet:                           workerConfig.Subnet,
 		PreexistingNetwork:                      sources.PreexistingNetwork,
+		PrivateDnsZoneVirtualNetworkLink:        sources.PrivateDnsZoneVirtualNetworkLink, 
 		BootstrapIgnitionStub:                   sources.BootstrapIgnStub,
 		BootstrapIgnitionURLPlaceholder:         sources.BootstrapIgnitionURLPlaceholder,
 		HyperVGeneration:                        sources.HyperVGeneration,

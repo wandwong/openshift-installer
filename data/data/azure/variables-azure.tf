@@ -175,6 +175,12 @@ When not set, Standard LB will be used for egress to the Internet.
 EOF
 }
 
+variable "azure_private_dns_zone_virtual_network_link" {
+  type = string
+  default = "vnet-link"
+  description = "Virtual network link, in the private DNS zone, for the storage account that holds container images."
+}
+
 variable "azure_hypervgeneration_version" {
   type        = string
   description = <<EOF

@@ -425,6 +425,7 @@ func (t *TerraformVariables) Generate(parents asset.Parents) error {
 				PreexistingNetwork:              preexistingnetwork,
 				Publish:                         installConfig.Config.Publish,
 				OutboundType:                    installConfig.Config.Azure.OutboundType,
+				PrivateDnsZoneVirtualNetworkLink: installConfig.Config.Azure.PrivateDnsZoneVirtualNetworkLink,
 				BootstrapIgnStub:                bootstrapIgnStub,
 				BootstrapIgnitionURLPlaceholder: bootstrapIgnURLPlaceholder,
 				HyperVGeneration:                hyperVGeneration,

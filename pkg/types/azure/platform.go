@@ -82,6 +82,12 @@ type Platform struct {
 	// +optional
 	OutboundType OutboundType `json:"outboundType"`
 
+	// PrivateDnsZoneVirtualNetworkLink is name of virtual network link, in private DNS zone, 
+	// for accessing storage account for installation images
+	//
+	// +optional
+	PrivateDnsZoneVirtualNetworkLink PrivateDnsZoneVirtualNetworkLink `json:"privateDnsZoneVirtualNetworkLink,omitempty"`
+
 	// ResourceGroupName is the name of an already existing resource group where the cluster should be installed.
 	// This resource group should only be used for this specific cluster and the cluster components will assume
 	// ownership of all resources in the resource group. Destroying the cluster using installer will delete this
