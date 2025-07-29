@@ -293,6 +293,12 @@ variable "azure_keyvault_key_name" {
   default = ""
 }
 
+variable "azure_user_assigned_identity" {
+  type = string
+  description = "Defines the user identity used for the installation."
+  default = "openshift-install-identity"
+}
+
 variable "azure_user_assigned_identity_key" {
   type = string
   description = "Defines the user identity key used for the encryption of storage account."

@@ -55,7 +55,7 @@ output "vm_image" {
 }
 
 output "identity" {
-  value = azurerm_user_assigned_identity.main.id
+  value = data.azurerm_user_assigned_identity.main.id
 }
 
 output "subnet_id" {

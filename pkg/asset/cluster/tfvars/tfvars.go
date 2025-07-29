@@ -432,6 +432,7 @@ func (t *TerraformVariables) Generate(parents asset.Parents) error {
 				VMArchitecture:                  installConfig.Config.ControlPlane.Architecture,
 				InfrastructureName:              clusterID.InfraID,
 				KeyVault:                        managedKeys.KeyVault,
+				UserAssignedIdentity:            installConfig.Config.Azure.UserAssignedIdentity,
 				UserAssignedIdentityKey:         managedKeys.UserAssignedIdentityKey,
 				LBPrivate:                       lbPrivate,
 			},

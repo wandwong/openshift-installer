@@ -2711,6 +2711,10 @@ spec:
                     description: VirtualNetwork link in the private DNS zone, 
                       for the storage account
                     type: string
+                  userAssignedIdentity:
+                    description: UserAssignedIdentity is the name of the user-assigned
+                      manager identity that contributes to creation of all the cluster resources.
+                    type: string
                 required:
                 - region
                 type: object

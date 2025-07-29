@@ -160,17 +160,19 @@ resource "azurerm_private_dns_a_record" "cluster" {
 }
 */
 
+/*
 resource "azurerm_user_assigned_identity" "main" {
   resource_group_name = data.azurerm_resource_group.main.name
   location            = data.azurerm_resource_group.main.location
   name                = "${var.cluster_id}-identity"
   tags                = var.azure_extra_tags
 }
+*/
 
 resource "azurerm_role_assignment" "main" {
   scope                = data.azurerm_resource_group.main.id
   role_definition_name = "Contributor"
-  principal_id         = azurerm_user_assigned_identity.main.principal_id
+  principal_id         = data.azurerm_user_assigned_identity.main.principal_id
 }
 
 resource "azurerm_role_assignment" "network" {
@@ -178,7 +180,7 @@ resource "azurerm_role_assignment" "network" {
 
   scope                = data.azurerm_resource_group.network[0].id
   role_definition_name = "Contributor"
-  principal_id         = azurerm_user_assigned_identity.main.principal_id
+  principal_id         = data.azurerm_user_assigned_identity.main.principal_id
 }
 
 resource "time_sleep" "wait_60_seconds" {

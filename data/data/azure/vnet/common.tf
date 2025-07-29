@@ -51,3 +51,8 @@ data "azurerm_private_dns_zone_virtual_network_link" "vnet_link" {
   // virtual_network_id    = local.virtual_network_id
   // registration_enabled  = false
 }
+
+data "azurerm_user_assigned_identity" "main" {
+  name                = var.azure_user_assigned_identity
+  resource_group_name = var.azure_network_resource_group_name
+}

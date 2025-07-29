@@ -106,6 +106,10 @@ type Platform struct {
 
 	// CustomerManagedKey has the keys needed to encrypt the storage account.
 	CustomerManagedKey *CustomerManagedKey `json:"customerManagedKey,omitempty"`
+
+	// UserAssignedIdentity is the name of the user identity that contribute to the openshift installation.
+	// +optional
+	UserAssignedIdentity string `json:"userAssignedIdentity,omitempty"`
 }
 
 // KeyVault defines an Azure Key Vault.

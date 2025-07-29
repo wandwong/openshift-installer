@@ -73,7 +73,8 @@ type config struct {
 	KeyVaultResourceGroup                   string            `json:"azure_keyvault_resource_group,omitempty"`
 	KeyVaultName                            string            `json:"azure_keyvault_name,omitempty"`
 	KeyVaultKeyName                         string            `json:"azure_keyvault_key_name,omitempty"`
-	UserAssignedIdentity                    string            `json:"azure_user_assigned_identity_key,omitempty"`
+	UserAssignedIdentity                    string            `json:"azure_user_assigned_identity,omitempty"`
+	UserAssignedIdentityKey                 string            `json:"azure_user_assigned_identity_key,omitempty"`
 	ResourceGroupMetadataTags               map[string]string `json:"azure_resource_group_metadata_tags"`
 }
 
@@ -98,6 +99,7 @@ type TFVarsSources struct {
 	VMArchitecture                  types.Architecture
 	InfrastructureName              string
 	KeyVault                        azure.KeyVault
+	UserAssignedIdentity            string
 	UserAssignedIdentityKey         string
 	LBPrivate                       bool
 }
@@ -211,7 +213,8 @@ func TFVars(sources TFVarsSources) ([]byte, error) {
 		KeyVaultResourceGroup:                   sources.KeyVault.ResourceGroup,
 		KeyVaultName:                            sources.KeyVault.Name,
 		KeyVaultKeyName:                         sources.KeyVault.KeyName,
-		UserAssignedIdentity:                    sources.UserAssignedIdentityKey,
+		UserAssignedIdentity:                    sources.UserAssignedIdentity,
+		UserAssignedIdentityKey:                 sources.UserAssignedIdentityKey,
 		ResourceGroupMetadataTags:               metadataTags,
 	}
 
