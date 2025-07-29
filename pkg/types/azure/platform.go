@@ -86,7 +86,7 @@ type Platform struct {
 	// for accessing storage account for installation images
 	//
 	// +optional
-	PrivateDnsZoneVirtualNetworkLink PrivateDnsZoneVirtualNetworkLink `json:"privateDnsZoneVirtualNetworkLink,omitempty"`
+	PrivateDnsZoneVirtualNetworkLink string `json:"privateDnsZoneVirtualNetworkLink,omitempty"`
 
 	// ResourceGroupName is the name of an already existing resource group where the cluster should be installed.
 	// This resource group should only be used for this specific cluster and the cluster components will assume
