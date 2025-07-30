@@ -169,12 +169,15 @@ resource "azurerm_user_assigned_identity" "main" {
 }
 */
 
+/*
 resource "azurerm_role_assignment" "main" {
   scope                = data.azurerm_resource_group.main.id
   role_definition_name = "Contributor"
   principal_id         = data.azurerm_user_assigned_identity.main.principal_id
 }
+*/
 
+/*
 resource "azurerm_role_assignment" "network" {
   count = var.azure_preexisting_network ? 1 : 0
 
@@ -182,6 +185,7 @@ resource "azurerm_role_assignment" "network" {
   role_definition_name = "Contributor"
   principal_id         = data.azurerm_user_assigned_identity.main.principal_id
 }
+*/
 
 resource "time_sleep" "wait_60_seconds" {
   depends_on      = [azurerm_private_endpoint.private_endpoint]
