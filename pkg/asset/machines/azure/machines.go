@@ -213,7 +213,7 @@ func provider(platform *azure.Platform, mpool *azure.MachinePool, osImage string
 		publicLB = ""
 	}
 
-	managedIdentity := platform.userAssignedIdentity
+	managedIdentity := platform.UserAssignedIdentity
 	if managedIdentity == nil || managedIdentity == "" {
 		managedIdentity := fmt.Sprintf("%s-identity", clusterID)
 	}
