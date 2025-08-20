@@ -215,7 +215,7 @@ func provider(platform *azure.Platform, mpool *azure.MachinePool, osImage string
 
 	managedIdentity := platform.UserAssignedIdentity
 	if managedIdentity == nil || managedIdentity == "" {
-		managedIdentity := fmt.Sprintf("%s-identity", clusterID)
+		managedIdentity = fmt.Sprintf("%s-identity", clusterID)
 	}
 	if platform.IsARO() || platform.CloudName == azure.StackCloud {
 		managedIdentity = ""
